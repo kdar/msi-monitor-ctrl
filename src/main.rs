@@ -172,7 +172,10 @@ fn configure_endpoint<T: UsbContext>(
   endpoint: &Endpoint,
 ) -> rusb::Result<()> {
   handle.set_active_configuration(endpoint.config)?;
-  handle.detach_kernel_driver(endpoint.iface)?;
+  #[cfg(target_os = "macos")]
+  {
+    handle.detach_kernel_driver(endpoint.iface)?;
+  }
   handle.claim_interface(endpoint.iface)?;
   handle.set_alternate_setting(endpoint.iface, endpoint.setting)?;
   Ok(())
