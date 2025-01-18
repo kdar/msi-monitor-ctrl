@@ -96,7 +96,7 @@ fn switch_device(
   // let mut buf = [0x00; 64];
   // dev_handle.read_interrupt(in_endpoint.address, &mut buf, timeout)?;
 
-  thread::sleep(Duration::from_secs(1));
+  thread::sleep(Duration::from_millis(500));
 
   let buf = packet(&[
     0x01,
@@ -143,16 +143,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         HotplugEvent::Connected(info) => {
           device_id = Some(info.id());
           if info.vendor_id() == VENDOR_ID && info.product_id() == PRODUCT_ID {
+            // println!("connected: {:?}", device_id);
             let mut guard = dev.lock().unwrap();
+            if guard.is_some() {
+              // *guard.unwrap().release_interface(2).unwrap();
+            }
+            thread::sleep(Duration::from_secs(2));
             if let Ok(Some(d)) = get_device() {
+              // println!("opening");
               *guard = Some(d.open().unwrap());
+              // println!("{:?}", *guard);
             } else {
               *guard = None;
             }
           }
         },
         HotplugEvent::Disconnected(id) => {
+          // println!("random disconnected: {:?}", id);
           if device_id == Some(id) {
+            // println!("disconnected: {:?}", id);
             let mut guard = dev.lock().unwrap();
             *guard = None;
           }
@@ -163,10 +172,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
 
-  let hotkey = HotKey::new(
-    Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
-    Code::ArrowRight,
-  );
+  #[cfg(target_os = "macos")]
+  let hotkey = {
+    HotKey::new(
+      Some(Modifiers::META | Modifiers::SHIFT | Modifiers::ALT),
+      Code::ArrowRight,
+    )
+  };
+  #[cfg(not(target_os = "macos"))]
+  let hotkey = {
+    HotKey::new(
+      Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
+      Code::ArrowRight,
+    )
+  };
 
   hotkeys_manager.register(hotkey).unwrap();
 
@@ -177,7 +196,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
     if let Ok(hk_event) = global_hotkey_channel.try_recv() {
-      println!("{:?}", hk_event);
+      // println!("{:?}", hk_event);
       if hotkey.id() == hk_event.id && hk_event.state == HotKeyState::Released {
         let mut guard = dev.lock().unwrap();
         match &mut *guard {
