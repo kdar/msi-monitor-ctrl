@@ -52,6 +52,8 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
   let mut device = dev_handle.device();
   let device_desc = device.device_descriptor()?;
 
+  // println!("{:?}", device_desc);
+
   let out_endpoint = find_endpoint(
     &mut device,
     &device_desc,
@@ -70,7 +72,7 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
   .unwrap();
   configure_endpoint(dev_handle, &in_endpoint)?;
 
-  println!("send interrupts");
+  // println!("send interrupts");
   let buf = packet(&[
     0x01, 0x35, 0x62, 0x30, 0x30, 0x35, 0x30, 0x30, 0x30, 0x30, 0x33, 0x0d,
   ]);
@@ -95,9 +97,13 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
 fn main() -> Result<(), Box<dyn Error>> {
   let dev: Arc<Mutex<Option<DeviceHandle<GlobalContext>>>> = Arc::new(Mutex::new(None));
 
+  // println!("get device");
   if let Ok(Some(d)) = get_device() {
     let mut guard = dev.lock().unwrap();
     *guard = Some(d.open().unwrap());
+    // println!("got device");
+  } else {
+    // println!("no device");
   }
 
   let event_loop = EventLoop::new();
@@ -136,7 +142,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   //   Code::ArrowRight,
   // );
 
-  let hotkey = HotKey::new(Some(Modifiers::CONTROL), Code::ArrowRight);
+  let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::ArrowRight);
 
   hotkeys_manager.register(hotkey).unwrap();
 
@@ -166,6 +172,7 @@ fn configure_endpoint<T: UsbContext>(
   endpoint: &Endpoint,
 ) -> rusb::Result<()> {
   handle.set_active_configuration(endpoint.config)?;
+  handle.detach_kernel_driver(endpoint.iface)?;
   handle.claim_interface(endpoint.iface)?;
   handle.set_alternate_setting(endpoint.iface, endpoint.setting)?;
   Ok(())
