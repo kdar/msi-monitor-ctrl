@@ -35,12 +35,15 @@ pub fn packet(slice: &[u8]) -> [u8; 64] {
 }
 
 fn get_device() -> Result<Option<Device<GlobalContext>>, Box<dyn Error>> {
-  for device in rusb::devices()?.iter() {
-    let device_desc = device.device_descriptor()?;
+  for _ in 0..3 {
+    for device in rusb::devices()?.iter() {
+      let device_desc = device.device_descriptor()?;
 
-    if device_desc.vendor_id() == VENDOR_ID && device_desc.product_id() == PRODUCT_ID {
-      return Ok(Some(device));
+      if device_desc.vendor_id() == VENDOR_ID && device_desc.product_id() == PRODUCT_ID {
+        return Ok(Some(device));
+      }
     }
+    thread::sleep(Duration::from_millis(500));
   }
 
   Ok(None)
@@ -148,7 +151,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if guard.is_some() {
               // *guard.unwrap().release_interface(2).unwrap();
             }
-            thread::sleep(Duration::from_secs(2));
+
             if let Ok(Some(d)) = get_device() {
               // println!("opening");
               *guard = Some(d.open().unwrap());
