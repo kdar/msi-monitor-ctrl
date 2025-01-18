@@ -70,6 +70,7 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
   .unwrap();
   configure_endpoint(dev_handle, &in_endpoint)?;
 
+  println!("send interrupts");
   let buf = packet(&[
     0x01, 0x35, 0x62, 0x30, 0x30, 0x35, 0x30, 0x30, 0x30, 0x30, 0x33, 0x0d,
   ]);
@@ -130,10 +131,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
 
-  let hotkey = HotKey::new(
-    Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
-    Code::ArrowRight,
-  );
+  // let hotkey = HotKey::new(
+  //   Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
+  //   Code::ArrowRight,
+  // );
+
+  let hotkey = HotKey::new(Some(Modifiers::CONTROL), Code::ArrowRight);
 
   hotkeys_manager.register(hotkey).unwrap();
 
@@ -144,6 +147,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
     if let Ok(hk_event) = global_hotkey_channel.try_recv() {
+      println!("{:?}", hk_event);
       if hotkey.id() == hk_event.id && hk_event.state == HotKeyState::Released {
         let mut guard = dev.lock().unwrap();
         match &mut *guard {
