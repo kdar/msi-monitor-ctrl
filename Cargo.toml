@@ -1,0 +1,11 @@
+[package]
+name = "msi-monitor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures-lite = "2.6.0"
+global-hotkey = "0.6.3"
+nusb = "0.1.12"
+rusb = "0.9.4"
+tao = "0.31.1"
