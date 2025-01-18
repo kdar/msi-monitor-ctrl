@@ -46,7 +46,11 @@ fn get_device() -> Result<Option<Device<GlobalContext>>, Box<dyn Error>> {
   Ok(None)
 }
 
-fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box<dyn Error>> {
+fn switch_device(
+  dev_handle: &mut DeviceHandle<GlobalContext>,
+  kvm: u8,
+  input: u8,
+) -> Result<(), Box<dyn Error>> {
   let timeout = Duration::from_secs(2);
 
   let mut device = dev_handle.device();
@@ -74,7 +78,18 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
 
   // println!("send interrupts");
   let buf = packet(&[
-    0x01, 0x35, 0x62, 0x30, 0x30, 0x35, 0x30, 0x30, 0x30, 0x30, 0x33, 0x0d,
+    0x01,
+    0x35,
+    0x62,
+    0x30,
+    0x30,
+    0x35,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+    0x30 + input,
+    0x0d,
   ]);
   dev_handle.write_interrupt(out_endpoint.address, &buf, timeout)?;
 
@@ -84,7 +99,18 @@ fn switch_device(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box
   thread::sleep(Duration::from_secs(1));
 
   let buf = packet(&[
-    0x01, 0x35, 0x62, 0x30, 0x30, 0x38, 0x3e, 0x30, 0x30, 0x30, 0x32, 0x0d,
+    0x01,
+    0x35,
+    0x62,
+    0x30,
+    0x30,
+    0x38,
+    0x3e,
+    0x30,
+    0x30,
+    0x30,
+    0x30 + kvm,
+    0x0d,
   ]);
   dev_handle.write_interrupt(out_endpoint.address, &buf, timeout)?;
 
@@ -137,12 +163,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
 
-  // let hotkey = HotKey::new(
-  //   Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
-  //   Code::ArrowRight,
-  // );
-
-  let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::ArrowRight);
+  let hotkey = HotKey::new(
+    Some(Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT),
+    Code::ArrowRight,
+  );
 
   hotkeys_manager.register(hotkey).unwrap();
 
@@ -158,7 +182,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut guard = dev.lock().unwrap();
         match &mut *guard {
           Some(dev_handle) => {
-            switch_device(dev_handle).unwrap();
+            #[cfg(target_os = "macos")]
+            {
+              switch_device(dev_handle, 1, 2).unwrap();
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+              switch_device(dev_handle, 2, 3).unwrap();
+            }
           },
           None => {},
         }
