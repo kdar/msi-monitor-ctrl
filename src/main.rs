@@ -123,6 +123,17 @@ fn switch_device(
   Ok(())
 }
 
+fn switch_device_by_os(dev_handle: &mut DeviceHandle<GlobalContext>) -> Result<(), Box<dyn Error>> {
+  #[cfg(target_os = "macos")]
+  {
+    switch_device(dev_handle, 1, 2)
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    switch_device(dev_handle, 2, 3)
+  }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
   let dev: Arc<Mutex<Option<DeviceHandle<GlobalContext>>>> = Arc::new(Mutex::new(None));
 
@@ -201,19 +212,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Ok(hk_event) = global_hotkey_channel.try_recv() {
       // println!("{:?}", hk_event);
       if hotkey.id() == hk_event.id && hk_event.state == HotKeyState::Released {
-        let mut guard = dev.lock().unwrap();
-        match &mut *guard {
-          Some(dev_handle) => {
-            #[cfg(target_os = "macos")]
-            {
-              switch_device(dev_handle, 1, 2).unwrap();
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-              switch_device(dev_handle, 2, 3).unwrap();
-            }
-          },
-          None => {},
+        for i in 0..2 {
+          let mut guard = dev.lock().unwrap();
+          match &mut *guard {
+            Some(dev_handle) => {
+              match switch_device_by_os(dev_handle) {
+                Ok(_) => (),
+                Err(e) => {
+                  if i == 0 {
+                    eprintln!("unable to switch device, trying to reopen it: {}", e);
+                    if let Ok(Some(d)) = get_device() {
+                      match d.open() {
+                        Ok(v) => {
+                          *guard = Some(v);
+                        },
+                        Err(_) => (),
+                      };
+                    }
+                  } else {
+                    eprintln!("unable to switch device: {}", e);
+                  }
+                },
+              };
+            },
+            None => {},
+          }
         }
       }
     }
