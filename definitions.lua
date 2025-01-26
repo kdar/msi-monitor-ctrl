@@ -1,14 +1,37 @@
 ---@meta
 
+---@type string
+_G.host_os = ""
+
+---@type string
+_G.host_arch = ""
+
+---@type string
+_G.host_family = ""
+
 ---@param duration integer
 ---@return nil
-function sleep(duration) end
+function sleep_ms(duration) end
+
+---@param hotkey string
+---@param callback function
+---@return nil
+function register_hotkey(hotkey, callback) end
+
+---@param callback function
+---@return nil
+function register_hotplug(hotkey, callback) end
+
+---@return nil
+function main_loop() end
 
 ---@class Device
 local Device = {}
 
+---@param vendor_id integer
+---@param product_id integer
 ---@return Device
-function open() end
+function open(vendor_id, product_id) end
 
 ---@param self self
 ---@return integer
