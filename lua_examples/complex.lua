@@ -5,15 +5,16 @@ local hotkey_callback = function(hk)
   local dev = open(VENDOR_ID, PRODUCT_ID)
   if host_os == "windows" then
     dev:set_input(3)
+    sleep_ms(100)
     dev:set_kvm(2)
   else
     dev:set_input(2)
+    sleep_ms(100)
     dev:set_kvm(1)
   end
 end
 
 local hotplug_callback = function(status, vendor_id, product_id)
-  print(status, vendor_id, product_id)
   if vendor_id ~= VENDOR_ID or product_id ~= PRODUCT_ID then
     return
   end
@@ -31,7 +32,7 @@ local error_handler = function(err)
 end
 
 if host_os == "macos" then
-  xpcall(register_hotkey, error_handler, "meta+control+alt+ArrowRight", hotkey_callback)
+  xpcall(register_hotkey, error_handler, "shift+super+alt+ArrowRight", hotkey_callback)
   xpcall(register_hotplug, error_handler, hotplug_callback)
 else
   xpcall(register_hotkey, error_handler, "shift+control+alt+ArrowRight", hotkey_callback)
