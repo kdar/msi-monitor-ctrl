@@ -6,8 +6,6 @@ use rusb::{
 
 use super::errors::StdError;
 
-const VENDOR_ID: u16 = 0x1462;
-const PRODUCT_ID: u16 = 0x3fa4;
 // This is the monitor index which I think increments
 // when you have multiple of these monitors.
 const INDEX: u8 = 0x1;
@@ -26,8 +24,8 @@ pub(crate) struct MSIDevice {
 }
 
 impl MSIDevice {
-  pub(crate) fn open() -> Result<Self, Box<StdError>> {
-    let Some(device) = get_device()? else {
+  pub(crate) fn open(vendor_id: u16, product_id: u16) -> Result<Self, Box<StdError>> {
+    let Some(device) = get_device(vendor_id, product_id)? else {
       return Err("unable to find device".into());
     };
     let mut device_handle = device.open()?;
@@ -200,12 +198,15 @@ pub fn make_packet(slice: &[u8]) -> [u8; 64] {
   buffer
 }
 
-fn get_device() -> Result<Option<Device<GlobalContext>>, Box<StdError>> {
+fn get_device(
+  vendor_id: u16,
+  product_id: u16,
+) -> Result<Option<Device<GlobalContext>>, Box<StdError>> {
   for _ in 0..3 {
     for device in rusb::devices()?.iter() {
       let device_desc = device.device_descriptor()?;
 
-      if device_desc.vendor_id() == VENDOR_ID && device_desc.product_id() == PRODUCT_ID {
+      if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
         return Ok(Some(device));
       }
     }
