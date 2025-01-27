@@ -25,12 +25,10 @@ pub(crate) struct MSIDevice {
 
 impl MSIDevice {
   pub(crate) fn open(vendor_id: u16, product_id: u16) -> Result<Self, Box<StdError>> {
-    let Some(device) = get_device(vendor_id, product_id)? else {
+    let Some(mut device) = get_device(vendor_id, product_id)? else {
       return Err("unable to find device".into());
     };
     let mut device_handle = device.open()?;
-
-    let mut device = device_handle.device();
     let device_desc = device.device_descriptor()?;
 
     let Some(out_endpoint) = find_endpoint(
