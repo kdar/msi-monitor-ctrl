@@ -14,7 +14,7 @@ _G.host_family = ""
 function sleep_ms(duration) end
 
 ---@param hotkey string
----@param callback function
+---@param callback function   
 ---@return nil
 function register_hotkey(hotkey, callback) end
 
@@ -24,6 +24,13 @@ function register_hotplug(hotkey, callback) end
 
 ---@return nil
 function main_loop() end
+
+---@param title string
+---@param message string
+---@param level string
+---@param buttoncfg table
+---@return nil
+function msgbox(title, message, level, buttoncfg) end
 
 ---@class Device
 local Device = {}

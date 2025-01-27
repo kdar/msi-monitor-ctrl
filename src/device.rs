@@ -151,6 +151,18 @@ impl MSIDevice {
       .device_handle
       .write_interrupt(self.out_endpoint.address, &buf, timeout)?;
 
+    // There is a response but we don't care about it. This is more here
+    // for the delay so you can set input and kvm one after another. Without
+    // this delay, setting the kvm or input right after another could fail.
+    // Another option is to retry on failure.
+    let mut buf = [0x00; 64];
+    for _ in 0..5 {
+      self
+        .device_handle
+        .read_interrupt(self.in_endpoint.address, &mut buf, Duration::from_millis(1))
+        .ok();
+    }
+
     Ok(())
   }
 
@@ -175,8 +187,17 @@ impl MSIDevice {
       .device_handle
       .write_interrupt(self.out_endpoint.address, &buf, timeout)?;
 
-    // let mut buf = [0x00; 64];
-    // dev_handle.read_interrupt(in_endpoint.address, &mut buf, timeout)?;
+    // There is a response but we don't care about it. This is more here
+    // for the delay so you can set input and kvm one after another. Without
+    // this delay, setting the kvm or input right after another could fail.
+    // Another option is to retry on failure.
+    let mut buf = [0x00; 64];
+    for _ in 0..5 {
+      self
+        .device_handle
+        .read_interrupt(self.in_endpoint.address, &mut buf, Duration::from_millis(1))
+        .ok();
+    }
 
     Ok(())
   }

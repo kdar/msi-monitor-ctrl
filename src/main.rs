@@ -12,6 +12,7 @@ use futures_lite::stream;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use mlua::{Function, Lua};
 use nusb::hotplug::HotplugEvent;
+use rfd::{MessageButtons, MessageDialog, MessageLevel};
 use tao::event_loop::{ControlFlow, EventLoop};
 
 mod device;
@@ -117,6 +118,67 @@ fn main() -> Result<(), Box<StdError>> {
       Ok(())
     })?;
 
+  let msgbox = lua.create_function(
+    move |_,
+          (title, message, level, buttoncfg): (
+      String,
+      String,
+      String,
+      HashMap<String, Vec<String>>,
+    )|
+          -> Result<(), mlua::Error> {
+      let level = match level.to_lowercase().as_str() {
+        "info" | "" => MessageLevel::Info,
+        "warning" => MessageLevel::Warning,
+        "error" => MessageLevel::Error,
+        _ => {
+          return Err(mlua::Error::external(format!(
+            "unknown msgbox level: {}",
+            level
+          )));
+        },
+      };
+
+      let mut buttons = buttoncfg.into_iter();
+      let button_opt = buttons.next().unwrap_or(("Ok".into(), vec![]));
+      let button_opt_len = button_opt.1.len();
+      let mut x = button_opt.1.into_iter();
+      let btns = match (button_opt.0.as_str(), button_opt_len) {
+        ("Ok", 0) => MessageButtons::Ok,
+        ("Ok", 1) => MessageButtons::OkCustom(x.next().unwrap()),
+        ("OkCancel", 0) => MessageButtons::OkCancel,
+        ("OkCancel", 1) => MessageButtons::OkCancelCustom(x.next().unwrap(), "Cancel".into()),
+        ("OkCancel", 2) => MessageButtons::OkCancelCustom(x.next().unwrap(), x.next().unwrap()),
+        ("YesNo", 0) => MessageButtons::YesNo,
+        ("YesNoCancel", 0) => MessageButtons::YesNoCancel,
+        ("YesNoCancel", 1) => {
+          MessageButtons::YesNoCancelCustom(x.next().unwrap(), "No".into(), "Cancel".into())
+        },
+        ("YesNoCancel", 2) => {
+          MessageButtons::YesNoCancelCustom(x.next().unwrap(), x.next().unwrap(), "Cancel".into())
+        },
+        ("YesNoCancel", 3) => {
+          MessageButtons::YesNoCancelCustom(x.next().unwrap(), x.next().unwrap(), x.next().unwrap())
+        },
+        (type_, _) => {
+          return Err(mlua::Error::external(format!(
+            "unknown msgbox buttons: {}={}",
+            type_,
+            x.as_slice().join(","),
+          )));
+        },
+      };
+
+      let dialog = MessageDialog::new()
+        .set_title(title)
+        .set_description(message)
+        .set_buttons(btns)
+        .set_level(level);
+      dialog.show();
+      Ok(())
+    },
+  )?;
+
   let devices: Arc<Mutex<HashMap<nusb::DeviceId, nusb::DeviceInfo>>> = Arc::new(Mutex::new(
     nusb::list_devices().unwrap().map(|d| (d.id(), d)).collect(),
   ));
@@ -133,6 +195,26 @@ fn main() -> Result<(), Box<StdError>> {
         let hk = hotkeys_clone.lock().unwrap();
         for (hk, callback) in hk.iter() {
           if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
+            // This releases the modifer key which could cause it to get stuck if
+            // we were to switch KVM.
+            if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
+            }
+            if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
+            }
+            if hk.mods.contains(
+              global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
+            ) {
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
+            }
+            if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
+              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
+            }
+
             callback.call::<()>((hk.to_string(),)).unwrap();
           }
         }
@@ -164,6 +246,7 @@ fn main() -> Result<(), Box<StdError>> {
 
   let globals = lua.globals();
   globals.set("open", &open)?;
+  globals.set("msgbox", &msgbox)?;
   globals.set("sleep_ms", &sleep_ms)?;
   globals.set("register_hotkey", &register_hotkey)?;
   globals.set("register_hotplug", &register_hotplug)?;
