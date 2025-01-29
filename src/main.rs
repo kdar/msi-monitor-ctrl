@@ -32,6 +32,13 @@ impl mlua::UserData for device::MSIDevice {
   // }
 
   fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+    // methods.add_method_mut("get_volume", |_, this, ()| -> Result<u32, mlua::Error> {
+    //   let val = this
+    //     .get_volume()
+    //     .map_err(mlua::ExternalError::into_lua_err)?;
+    //   Ok(val)
+    // });
+
     methods.add_method_mut("get_kvm", |_, this, ()| -> Result<u32, mlua::Error> {
       let val = this.get_kvm().map_err(mlua::ExternalError::into_lua_err)?;
       Ok(val)
@@ -43,6 +50,16 @@ impl mlua::UserData for device::MSIDevice {
         .map_err(mlua::ExternalError::into_lua_err)?;
       Ok(val)
     });
+
+    // methods.add_method_mut(
+    //   "set_volume",
+    //   |_, this, level: u8| -> Result<(), mlua::Error> {
+    //     this
+    //       .set_volume(level)
+    //       .map_err(mlua::ExternalError::into_lua_err)?;
+    //     Ok(())
+    //   },
+    // );
 
     methods.add_method_mut(
       "set_kvm",
@@ -67,6 +84,21 @@ impl mlua::UserData for device::MSIDevice {
 }
 
 fn main() -> Result<(), Box<StdError>> {
+  // use ddc::Ddc;
+  // use ddc_winapi::Monitor;
+  // for mut ddc in Monitor::enumerate().unwrap() {
+  //   println!("{}", ddc.description());
+  //   let s = ddc.capabilities_string().unwrap();
+  //   println!("{}", String::from_utf8_lossy(&s));
+  //   let v = ddc.get_vcp_feature(0xe3).unwrap();
+  //   println!("{:?}", v);
+  // }
+
+  // let mut dev = device::MSIDevice::open(0x1462, 0x3fa4)?;
+  // dev.test()?;
+
+  // return Ok(());
+
   let args = Args::parse();
 
   let lua = Lua::new();

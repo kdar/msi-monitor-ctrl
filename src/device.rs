@@ -116,6 +116,18 @@ impl MSIDevice {
     Ok((buf, num))
   }
 
+  // pub(crate) fn get_volume(&mut self) -> Result<u32, Box<StdError>> {
+  //   let packet = make_packet(&[INDEX, 0x35, 0x38, 0x30, 0x30, 0x38, 0x37, 0x30, 0xd]);
+  //   let (_, value) = self.get_uart_cmd(packet)?;
+  //   Ok(value)
+  // }
+
+  pub(crate) fn test(&mut self) -> Result<u32, Box<StdError>> {
+    let packet = make_packet(&[INDEX, 53, 56, 48, 48, 49, 51, 48, 13]);
+    let (_, value) = self.get_uart_cmd(packet)?;
+    Ok(value)
+  }
+
   pub(crate) fn get_kvm(&mut self) -> Result<u32, Box<StdError>> {
     let packet = make_packet(&[INDEX, 0x35, 0x38, 0x30, 0x30, 0x38, 0x3e, 0x30, 0xd]);
     let (_, value) = self.get_uart_cmd(packet)?;
@@ -127,6 +139,42 @@ impl MSIDevice {
     let (_, value) = self.get_uart_cmd(packet)?;
     Ok(value)
   }
+
+  // pub(crate) fn set_volume(&mut self, level: u8) -> Result<(), Box<StdError>> {
+  //   let timeout = Duration::from_secs(1);
+
+  //   let buf = make_packet(&[
+  //     INDEX,
+  //     0x35,
+  //     0x62,
+  //     0x30,
+  //     0x30,
+  //     0x38,
+  //     0x37,
+  //     0x30,
+  //     0x30,
+  //     0x30,
+  //     0x30 + level,
+  //     0xd,
+  //   ]);
+  //   self
+  //     .device_handle
+  //     .write_interrupt(self.out_endpoint.address, &buf, timeout)?;
+
+  //   // There is a response but we don't care about it. This is more here
+  //   // for the delay so you can set input and kvm one after another. Without
+  //   // this delay, setting the kvm or input right after another could fail.
+  //   // Another option is to retry on failure.
+  //   let mut buf = [0x00; 64];
+  //   for _ in 0..5 {
+  //     self
+  //       .device_handle
+  //       .read_interrupt(self.in_endpoint.address, &mut buf, Duration::from_millis(1))
+  //       .ok();
+  //   }
+
+  //   Ok(())
+  // }
 
   pub(crate) fn set_input(&mut self, position: u8) -> Result<(), Box<StdError>> {
     let timeout = Duration::from_secs(1);
