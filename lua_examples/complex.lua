@@ -22,6 +22,8 @@ local hotkey_callback = function(hk)
   else
     dev:set_input(2)
     dev:set_kvm(1)
+    -- Disable the external display so all the windows go to the macbook.
+    os.execute('displayplacer "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 enabled:false"')
   end
 end
 
@@ -32,14 +34,9 @@ local hotplug_callback = function(status, vendor_id, product_id)
   end
 
   -- If we are connected on macos, then set it up such that the external monitor is
-  -- an extension of the macbook monitor. If we disconnect, then remove the
-  -- external monitor. This allows the windows in macos to be on both screens when
-  -- the external monitor is connected, and all the windows to be on only the macbook
-  -- screen when it is disconnected.
+  -- an extension of the macbook monitor.
   if status == "connected" then
     os.execute('displayplacer "id:3145D954-9166-4630-537F-6A7A36E2B478 res:1792x1120 hz:59 color_depth:4 enabled:true scaling:on origin:(0,0) degree:0" "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 res:2560x1440 hz:59 color_depth:8 enabled:true scaling:off origin:(-2560,0) degree:0"')
-  else
-    os.execute('displayplacer "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 enabled:false"')
   end
 end
 

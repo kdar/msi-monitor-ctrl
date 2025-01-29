@@ -612,6 +612,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "ddc"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba69f2c53e320fc4abad17cb02bbbf04d1a36f18e9907f347589ec5991b3c6c5"
+dependencies = [
+ "mccs 0.1.3",
+]
+
+[[package]]
+name = "ddc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1363c64a5107a51aa7a4198f7a0a61e3ae2347737ef26360dbd7f6025d6ee4f0"
+dependencies = [
+ "mccs 0.2.0",
+]
+
+[[package]]
+name = "ddc-macos"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28aca22e30b33daf41a5d269a19b00588adf5242ed5525d3818195de17a534dc"
+dependencies = [
+ "core-foundation 0.10.0",
+ "core-foundation-sys 0.8.7",
+ "core-graphics 0.24.0",
+ "ddc 0.2.2",
+ "io-kit-sys",
+ "mach2",
+ "thiserror",
+]
+
+[[package]]
+name = "ddc-winapi"
+version = "0.3.0-alpha.2"
+source = "git+https://github.com/arcnmx/ddc-winapi-rs#a1ee94bffba058d90ab5823dd2d134b1109aa434"
+dependencies = [
+ "ddc 0.3.0",
+ "widestring",
+ "windows",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1485,6 +1528,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mccs"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6090d6b3ded42fed158b660a6b9cdaa1924f3eef6c6598e82a9ca9b70a1988cd"
+dependencies = [
+ "void",
+]
+
+[[package]]
+name = "mccs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a63ab5297c9a7d5f8298a076b5f858c3c51ce84bf2f57a302d1d67ff9323360"
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1532,6 +1590,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "crossbeam-channel",
+ "ddc 0.3.0",
+ "ddc-macos",
+ "ddc-winapi",
  "futures-lite",
  "global-hotkey",
  "mlua",
@@ -2510,6 +2571,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "void"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2677,6 +2744,12 @@ dependencies = [
  "rustix",
  "winsafe",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7219d36b6eac893fa81e84ebe06485e7dcbb616177469b142df14f1f4deb1311"
 
 [[package]]
 name = "winapi"
