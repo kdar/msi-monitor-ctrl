@@ -15,6 +15,7 @@ crossbeam-channel = "0.5.14"
 rfd = "0.15.2"
 rdev = "0.5.3"
 ddc = "0.3.0"
+simple-mdns = { version = "0.6.2", features = ["sync"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ddc-winapi = { git = "https://github.com/arcnmx/ddc-winapi-rs" }

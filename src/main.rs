@@ -99,6 +99,31 @@ fn main() -> Result<(), Box<StdError>> {
 
   // return Ok(());
 
+  use std::str::FromStr;
+
+  use simple_mdns::{InstanceInformation, sync_discovery::ServiceDiscovery};
+
+  thread::spawn(|| {
+    let mut discovery = ServiceDiscovery::new(
+      InstanceInformation::new("a".into()).with_socket_address(
+        "192.168.1.130:8090"
+          .parse()
+          .expect("Invalid socket address"),
+      ),
+      "_msi_monitor_ctrl._tcp.local",
+      60,
+    )
+    .expect("Failed to start service discovery");
+
+    loop {
+      for x in discovery.get_known_services() {
+        println!("{:?}", x);
+      }
+
+      thread::sleep(Duration::from_secs(5));
+    }
+  });
+
   let args = Args::parse();
 
   let lua = Lua::new();
