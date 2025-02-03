@@ -1,5 +1,6 @@
 local VENDOR_ID = 0x1462
 local PRODUCT_ID = 0x3fa4
+local CB_ID = nil
 
 local error_handler = function(err)
   print("ERROR:", err)
@@ -22,8 +23,6 @@ local hotkey_callback = function(hk)
   else
     dev:set_input(2)
     dev:set_kvm(1)
-    -- Disable the external display so all the windows go to the macbook.
-    os.execute('displayplacer "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 enabled:false"')
   end
 end
 
@@ -38,10 +37,13 @@ local hotplug_callback = function(status, vendor_id, product_id)
   if status == "connected" then
     print("Monitor connected")
     os.execute('displayplacer "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 res:2560x1440 hz:59 color_depth:8 enabled:true scaling:off origin:(0,0) degree:0" "id:3145D954-9166-4630-537F-6A7A36E2B478 res:1792x1120 hz:59 color_depth:4 enabled:true scaling:on origin:(2560,0) degree:0"')
-    -- os.execute('displayplacer "id:3145D954-9166-4630-537F-6A7A36E2B478 res:1792x1120 hz:59 color_depth:4 enabled:true scaling:on origin:(0,0) degree:0" "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 res:2560x1440 hz:59 color_depth:8 enabled:true scaling:off origin:(-2560,0) degree:0"')
   else
+    -- If we are diconnected we simply just mirror the display so that it appears we only have one display.
+    -- I do this instead of disabling the external display because this was causing issues when you are on
+    -- the other computer and you turn on or off the monitor, or you go into sleep mode. OSX would then
+    -- hook the external display back up even if you weren't ready to switch to OSX.
     print("Monitor disconnected")
-    os.execute('displayplacer "id:3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 enabled:false"')
+    os.execute('displayplacer "id:3145D954-9166-4630-537F-6A7A36E2B478+3FDCE03B-E3E4-24D1-82FE-C00ABF19A2B0 res:1792x1120 hz:59 color_depth:8 enabled:true scaling:on origin:(0,0) degree:0"')
   end
 end
 
