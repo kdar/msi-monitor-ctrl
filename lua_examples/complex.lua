@@ -58,5 +58,8 @@ else
   xpcall(register_hotkey, error_handler, "shift+control+alt+ArrowRight", hotkey_callback)
 end
 
+-- Autorun the program on startup, with the last cli arguments used.
+xpcall(autorun, error_handler)
+
 -- Run the main loop to listen for hotkeys and hotplug events.
 main_loop()

@@ -1,5 +1,11 @@
+#![cfg_attr(
+  all(not(debug_assertions), target_os = "windows"),
+  windows_subsystem = "windows"
+)]
+
 use std::{
   collections::HashMap,
+  io::IsTerminal,
   str::FromStr,
   sync::{Arc, Mutex},
   thread,
@@ -7,13 +13,16 @@ use std::{
 };
 
 use clap::Parser;
+use directories::ProjectDirs;
 use errors::StdError;
 use futures_lite::stream;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
-use mlua::{Function, Lua};
+use mlua::{ExternalError, Function, Lua};
 use nusb::hotplug::HotplugEvent;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 use tao::event_loop::{ControlFlow, EventLoop};
+use tracing::{Level, event, level_filters::LevelFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod device;
 mod errors;
@@ -23,6 +32,8 @@ mod errors;
 struct Args {
   #[arg(short, long)]
   cmd: String,
+  #[arg(long)]
+  console: bool,
 }
 
 impl mlua::UserData for device::MSIDevice {
@@ -83,7 +94,12 @@ impl mlua::UserData for device::MSIDevice {
   }
 }
 
-fn main() -> Result<(), Box<StdError>> {
+fn run() -> Result<(), Box<StdError>> {
+  // let _ = std::process::Command::new("cmd.exe")
+  //   .arg("/c")
+  //   .arg("pause")
+  //   .status();
+
   // use ddc::Ddc;
   // use ddc_winapi::Monitor;
   // for mut ddc in Monitor::enumerate().unwrap() {
@@ -100,6 +116,13 @@ fn main() -> Result<(), Box<StdError>> {
   // return Ok(());
 
   let args = Args::parse();
+
+  #[cfg(target_os = "windows")]
+  if args.console {
+    unsafe {
+      windows::Win32::System::Console::AllocConsole().unwrap();
+    }
+  }
 
   let lua = Lua::new();
 
@@ -276,6 +299,44 @@ fn main() -> Result<(), Box<StdError>> {
     });
   })?;
 
+  let autorun = lua.create_function(
+    |_, (app_path, args): (Option<String>, Option<Vec<String>>)| -> Result<(), mlua::Error> {
+      let mut autolaunch = auto_launch::AutoLaunchBuilder::new();
+
+      autolaunch
+        .set_app_name(env!("CARGO_CRATE_NAME"))
+        .set_use_launch_agent(true);
+
+      match (app_path, args) {
+        (Some(app_path), Some(args)) => {
+          autolaunch
+            .set_app_path(app_path.as_ref())
+            .set_args(args.as_ref());
+        },
+        (Some(app_path), None) => {
+          autolaunch
+            .set_app_path(app_path.as_ref())
+            .set_args(&std::env::args().skip(1).collect::<Vec<_>>());
+        },
+        (None, Some(args)) => {
+          autolaunch
+            .set_app_path(std::env::current_exe()?.to_str().unwrap())
+            .set_args(args.as_ref());
+        },
+        (None, None) => {
+          autolaunch
+            .set_app_path(std::env::current_exe()?.to_str().unwrap())
+            .set_args(&std::env::args().skip(1).collect::<Vec<_>>());
+        },
+      };
+
+      let autolaunch = autolaunch.build().map_err(|e| e.into_lua_err())?;
+      autolaunch.enable().map_err(|e| e.into_lua_err())?;
+
+      Ok(())
+    },
+  )?;
+
   let globals = lua.globals();
   globals.set("open", &open)?;
   globals.set("msgbox", &msgbox)?;
@@ -286,8 +347,59 @@ fn main() -> Result<(), Box<StdError>> {
   globals.set("host_os", std::env::consts::OS)?;
   globals.set("host_arch", std::env::consts::ARCH)?;
   globals.set("host_family", std::env::consts::FAMILY)?;
+  globals.set("autorun", autorun)?;
 
   lua.load(args.cmd).exec()?;
 
   Ok(())
+}
+
+fn setup_logging() -> Result<(), Box<StdError>> {
+  let project_dirs = ProjectDirs::from("com", "kdar", env!("CARGO_CRATE_NAME"))
+    .ok_or("could not find project dir")?;
+  let config_dir = project_dirs.data_local_dir().to_path_buf();
+
+  let file_appender = tracing_appender::rolling::never(&config_dir, "app.log");
+
+  tracing_subscriber::registry()
+    .with(
+      tracing_subscriber::fmt::layer()
+        .with_writer(file_appender)
+        .with_file(true)
+        .with_line_number(true)
+        .with_ansi(false),
+    )
+    .with(tracing_subscriber::fmt::layer().pretty())
+    .with(
+      EnvFilter::builder()
+        .with_default_directive(LevelFilter::DEBUG.into())
+        .with_env_var(EnvFilter::DEFAULT_ENV)
+        .from_env_lossy(),
+    )
+    .init();
+
+  Ok(())
+}
+
+fn main() {
+  if let Err(err) = setup_logging() {
+    if std::io::stdout().is_terminal() {
+      event!(
+        Level::ERROR,
+        error = err.to_string(),
+        "Could not setup logging"
+      );
+    } else {
+      let dialog = MessageDialog::new()
+        .set_title("Error")
+        .set_description(format!("Could not setup logging: {}", err))
+        .set_buttons(MessageButtons::Ok)
+        .set_level(MessageLevel::Error);
+      dialog.show();
+    }
+  }
+
+  if let Err(err) = run() {
+    event!(Level::ERROR, error = err.to_string());
+  }
 }
