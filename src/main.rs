@@ -227,25 +227,25 @@ fn main() -> Result<(), Box<StdError>> {
         let hk = hotkeys_clone.lock().unwrap();
         for (hk, callback) in hk.iter() {
           if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
-            // This releases the modifer key which could cause it to get stuck if
-            // we were to switch KVM.
-            if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
-            }
-            if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
-            }
-            if hk.mods.contains(
-              global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
-            ) {
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
-            }
-            if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
-              rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
-            }
+            // // This releases the modifer key which could cause it to get stuck if
+            // // we were to switch KVM.
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
+            // }
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
+            // }
+            // if hk.mods.contains(
+            //   global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
+            // ) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
+            // }
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
+            // }
 
             callback.call::<()>((hk.to_string(),)).unwrap();
           }
