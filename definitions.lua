@@ -32,6 +32,11 @@ function main_loop() end
 ---@return nil
 function msgbox(title, message, level, buttoncfg) end
 
+---@param app_path string? Optional app path to run. If not provided, will use what the command was run with.
+---@param args string[]? Optional args to use. If not provided, will use what the command was run with.
+---@return nil
+function autorun(cmd, app_path, args) end
+
 ---@class Device
 local Device = {}
 
