@@ -212,7 +212,7 @@ impl MSIDevice {
     Ok(())
   }
 
-  pub(crate) fn set_kvm(&mut self, position: u8) -> Result<(), Box<dyn Error>> {
+  pub(crate) fn set_kvm(&mut self, position: u8) -> Result<(), Box<StdError>> {
     let timeout = Duration::from_secs(1);
 
     let buf = make_packet(&[

@@ -6,6 +6,7 @@ end
 
 local error_handler = function(err)
   print("ERROR:", err)
+  msgbox("Error", tostring(err), "error", {Ok={}})
   os.exit(1)
 end
 
