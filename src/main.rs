@@ -7,7 +7,10 @@ use std::{
   collections::HashMap,
   io::IsTerminal,
   str::FromStr,
-  sync::{Arc, Mutex},
+  sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+  },
   thread,
   time::{Duration, Instant},
 };
@@ -20,12 +23,39 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey:
 use mlua::{ExternalError, Function, Lua};
 use nusb::hotplug::HotplugEvent;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
+use rustautogui::RustAutoGui;
 use tao::event_loop::{ControlFlow, EventLoop};
 use tracing::{Level, event, level_filters::LevelFilter};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod device;
 mod errors;
+
+static INTERVAL_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+fn get_interval_id() -> usize {
+  INTERVAL_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+// We wrap GlobalHotKeyManager so we can send it across threads. This is
+// safe to do for specific windows pointers like HWND since
+// it is unique globally.
+struct WrappedHotKeyManager(GlobalHotKeyManager);
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for WrappedHotKeyManager {}
+#[cfg(target_os = "windows")]
+unsafe impl Sync for WrappedHotKeyManager {}
+
+// We wrap RustAutoGui so we can send it across threads. This is
+// safe to do for specific windows pointers like HWND since
+// it is unique globally.
+struct WrappedRustAutoGui(rustautogui::RustAutoGui);
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for WrappedRustAutoGui {}
+#[cfg(target_os = "windows")]
+unsafe impl Sync for WrappedRustAutoGui {}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -34,6 +64,8 @@ struct Args {
   cmd: String,
   #[arg(long)]
   console: bool,
+  #[arg(long)]
+  cwd: Option<String>,
 }
 
 impl mlua::UserData for device::MSIDevice {
@@ -115,25 +147,31 @@ fn run() -> Result<(), Box<StdError>> {
 
   // return Ok(());
 
-  let args = Args::parse();
+  let args = Args::try_parse()?;
+
+  if let Some(cwd) = args.cwd {
+    std::env::set_current_dir(cwd)?;
+  }
 
   #[cfg(target_os = "windows")]
   if args.console {
     unsafe {
-      windows::Win32::System::Console::AllocConsole().unwrap();
+      windows::Win32::System::Console::AllocConsole()?;
     }
   }
 
+  let event_loop = EventLoop::new();
+
   let lua = Lua::new();
 
-  let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
+  let hotkeys_manager = GlobalHotKeyManager::new()?;
   let global_hotkey_channel = GlobalHotKeyEvent::receiver();
   let hotplug = Arc::new(Mutex::new(None));
 
-  let (tx, rx) = crossbeam_channel::unbounded();
+  let (hotplug_tx, hotplug_rx) = crossbeam_channel::unbounded();
   std::thread::spawn(move || {
     for event in stream::block_on(nusb::watch_devices().unwrap()) {
-      tx.send(event).unwrap();
+      hotplug_tx.send(event).unwrap();
     }
   });
 
@@ -153,12 +191,17 @@ fn run() -> Result<(), Box<StdError>> {
   let hotkeys = Arc::new(Mutex::new(HashMap::new()));
 
   let hotkeys_clone = hotkeys.clone();
+  let hk_manager = Arc::new(Mutex::new(WrappedHotKeyManager(hotkeys_manager)));
   let register_hotkey = lua.create_function(
     move |_, (keybind, callback): (String, Function)| -> Result<(), mlua::Error> {
       let hotkey = HotKey::from_str(&keybind).map_err(mlua::ExternalError::into_lua_err)?;
-      hotkeys_manager
+
+      let hk_manager = hk_manager.lock().unwrap();
+      hk_manager
+        .0
         .register(hotkey)
         .map_err(mlua::ExternalError::into_lua_err)?;
+
       let mut hk = hotkeys_clone.lock().unwrap();
       hk.insert(hotkey, callback);
       Ok(())
@@ -170,6 +213,26 @@ fn run() -> Result<(), Box<StdError>> {
     lua.create_function(move |_, callback: Function| -> Result<(), mlua::Error> {
       let mut hp = hotplug_clone.lock().unwrap();
       *hp = Some(callback);
+      Ok(())
+    })?;
+
+  let interval_callbacks = Arc::new(Mutex::new(HashMap::new()));
+  let interval_callbacks_clone = interval_callbacks.clone();
+  let register_interval = lua.create_function(
+    move |_, (interval, callback): (u64, Function)| -> Result<usize, mlua::Error> {
+      let mut ic = interval_callbacks_clone.lock().unwrap();
+      let id = get_interval_id();
+      let next = std::time::Instant::now() + Duration::from_millis(interval);
+      ic.insert(id, (callback, interval, next));
+      Ok(id)
+    },
+  )?;
+
+  let interval_callbacks_clone = interval_callbacks.clone();
+  let unregister_interval =
+    lua.create_function(move |_, id: usize| -> Result<(), mlua::Error> {
+      let mut ic = interval_callbacks_clone.lock().unwrap();
+      ic.remove(&id);
       Ok(())
     })?;
 
@@ -237,67 +300,6 @@ fn run() -> Result<(), Box<StdError>> {
   let devices: Arc<Mutex<HashMap<nusb::DeviceId, nusb::DeviceInfo>>> = Arc::new(Mutex::new(
     nusb::list_devices().unwrap().map(|d| (d.id(), d)).collect(),
   ));
-  let main_loop = lua.create_function(move |_, ()| -> Result<(), mlua::Error> {
-    let event_loop = EventLoop::new();
-    let hotkeys_clone = hotkeys.clone();
-    let hotplug_clone = hotplug.clone();
-    let devices_clone = devices.clone();
-    let rx = rx.clone();
-    event_loop.run(move |_, _, control_flow| {
-      *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
-
-      if let Ok(hk_event) = global_hotkey_channel.try_recv() {
-        let hk = hotkeys_clone.lock().unwrap();
-        for (hk, callback) in hk.iter() {
-          if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
-            // // This releases the modifer key which could cause it to get stuck if
-            // // we were to switch KVM.
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
-            // }
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
-            // }
-            // if hk.mods.contains(
-            //   global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
-            // ) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
-            // }
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
-            // }
-
-            callback.call::<()>((hk.to_string(),)).unwrap();
-          }
-        }
-      }
-
-      if let Ok(event) = rx.try_recv() {
-        let hp = hotplug_clone.lock().unwrap();
-        if let Some(cb) = hp.clone() {
-          match event {
-            HotplugEvent::Connected(d) => {
-              cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
-                .unwrap();
-              let mut devices = devices_clone.lock().unwrap();
-              devices.insert(d.id(), d);
-            },
-            HotplugEvent::Disconnected(id) => {
-              let mut devices = devices_clone.lock().unwrap();
-              if let Some(d) = devices.get(&id) {
-                cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
-                  .unwrap();
-                devices.remove(&id);
-              }
-            },
-          };
-        };
-      }
-    });
-  })?;
 
   let autorun = lua.create_function(
     |_, (app_path, args): (Option<String>, Option<Vec<String>>)| -> Result<(), mlua::Error> {
@@ -337,6 +339,64 @@ fn run() -> Result<(), Box<StdError>> {
     },
   )?;
 
+  let rustautogui = Arc::new(Mutex::new(WrappedRustAutoGui(
+    RustAutoGui::new(false).map_err(|e| e.into_lua_err())?,
+  )));
+  let rustautogui_clone = rustautogui.clone();
+  let screen_size = lua.create_function(move |_, ()| -> Result<(i32, i32), mlua::Error> {
+    let mut rag = rustautogui_clone.lock().unwrap();
+    Ok(rag.0.get_screen_size())
+  })?;
+  let rustautogui_clone = rustautogui.clone();
+  let move_mouse = lua.create_function(
+    move |_, (x, y, moving_time, mode): (i64, i64, f32, String)| -> Result<(), mlua::Error> {
+      // Anything > 10.0 is VERY slow and can lock your computer.
+      let moving_time = if moving_time > 10.0 {
+        10.0
+      } else {
+        moving_time
+      };
+
+      let rag = rustautogui_clone.lock().unwrap();
+      match mode.as_str() {
+        "rel" => {
+          rag
+            .0
+            .move_mouse(
+              i32::try_from(x).map_err(|e| e.into_lua_err())?,
+              i32::try_from(y).map_err(|e| e.into_lua_err())?,
+              moving_time,
+            )
+            .map_err(|e| e.into_lua_err())?;
+        },
+        "abs" => {
+          rag
+            .0
+            .move_mouse_to_pos(
+              u32::try_from(x).map_err(|e| e.into_lua_err())?,
+              u32::try_from(y).map_err(|e| e.into_lua_err())?,
+              moving_time,
+            )
+            .map_err(|e| e.into_lua_err())?;
+        },
+        _ => {
+          return Err(mlua::Error::external(format!(
+            "unknown move_mouse mode: {}",
+            mode
+          )));
+        },
+      };
+      Ok(())
+    },
+  )?;
+
+  static DO_MAIN_LOOP: AtomicBool = AtomicBool::new(false);
+
+  let main_loop = lua.create_function(move |_, ()| -> Result<(), mlua::Error> {
+    DO_MAIN_LOOP.swap(true, Ordering::Relaxed);
+    Ok(())
+  })?;
+
   let globals = lua.globals();
   globals.set("open", &open)?;
   globals.set("msgbox", &msgbox)?;
@@ -348,8 +408,84 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("host_arch", std::env::consts::ARCH)?;
   globals.set("host_family", std::env::consts::FAMILY)?;
   globals.set("autorun", autorun)?;
+  globals.set("register_interval", &register_interval)?;
+  globals.set("unregister_interval", &unregister_interval)?;
+  globals.set("move_mouse", &move_mouse)?;
+  globals.set("screen_size", &screen_size)?;
 
   lua.load(args.cmd).exec()?;
+
+  if DO_MAIN_LOOP.load(Ordering::Relaxed) {
+    event!(Level::INFO, "starting main loop");
+    let hotkeys_clone = hotkeys.clone();
+    let hotplug_clone = hotplug.clone();
+    let devices_clone = devices.clone();
+    let interval_callbacks_clone = interval_callbacks.clone();
+    let rx = hotplug_rx.clone();
+    event_loop.run(move |_, _, control_flow| {
+      *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+
+      if let Ok(mut ic) = interval_callbacks_clone.lock() {
+        for (k, v) in &mut *ic {
+          if std::time::Instant::now() >= v.2 {
+            v.0.call::<()>(()).unwrap();
+            v.2 = std::time::Instant::now() + std::time::Duration::from_millis(v.1);
+          }
+        }
+      }
+
+      if let Ok(hk_event) = global_hotkey_channel.try_recv() {
+        let hk = hotkeys_clone.lock().unwrap();
+        for (hk, callback) in hk.iter() {
+          if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
+            // // This releases the modifer key which could cause it to get stuck if
+            // // we were to switch KVM.
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
+            // }
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
+            // }
+            // if hk.mods.contains(
+            //   global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
+            // ) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
+            // }
+            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
+            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
+            // }
+
+            callback.call::<()>((hk.to_string(),)).unwrap();
+          }
+        }
+      }
+
+      if let Ok(hotplug_event) = rx.try_recv() {
+        let hp = hotplug_clone.lock().unwrap();
+        if let Some(cb) = hp.clone() {
+          match hotplug_event {
+            HotplugEvent::Connected(d) => {
+              cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
+                .unwrap();
+              let mut devices = devices_clone.lock().unwrap();
+              devices.insert(d.id(), d);
+            },
+            HotplugEvent::Disconnected(id) => {
+              let mut devices = devices_clone.lock().unwrap();
+              if let Some(d) = devices.get(&id) {
+                cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
+                  .unwrap();
+                devices.remove(&id);
+              }
+            },
+          };
+        };
+      }
+    });
+  }
 
   Ok(())
 }
@@ -400,6 +536,12 @@ fn main() {
   }
 
   if let Err(err) = run() {
+    let dialog = MessageDialog::new()
+      .set_title("Error")
+      .set_description(format!("Error: {}", err))
+      .set_buttons(MessageButtons::Ok)
+      .set_level(MessageLevel::Error);
+    dialog.show();
     event!(Level::ERROR, error = err.to_string());
   }
 }

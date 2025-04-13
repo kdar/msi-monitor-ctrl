@@ -37,6 +37,25 @@ function msgbox(title, message, level, buttoncfg) end
 ---@return nil
 function autorun(cmd, app_path, args) end
 
+---@param x number Absolute or relative x position.
+---@param y number Absolute or relative y position.
+---@param moving_time number Floating number for how long to take moving the mouse.
+---@param mode string "rel" or "abs" to move relatively or absolutely.
+---@return nil
+function move_mouse(x, y, moving_time, mode) end
+
+---@return number ... Width and height
+function screen_size() end
+
+---@param interval number Interval time in milliseconds.
+---@param callback function   
+---@return number id An ID you can use to call unregister_interval.
+function register_interval(interval, callback) end
+
+---@param id number The ID returned from register_interval. 
+---@return nil
+function unregister_interval(id) end
+
 ---@class Device
 local Device = {}
 

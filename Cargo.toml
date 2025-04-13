@@ -10,14 +10,14 @@ homepage = "https://github.com/kdar/msi-monitor-ctrl"
 keywords = ["msi", "monitor"]
 
 [dependencies]
-clap = { version = "4.5.35", features = ["derive"] }
+clap = { version = "4.5.36", features = ["derive"] }
 rusb = "0.9.4"
-mlua = { version = "0.10.3", features = ["lua54", "vendored"] }
-tao = "0.32.8"
+mlua = { version = "0.10.3", features = ["lua54", "vendored", "send"] }
+tao = "0.33.0"
 global-hotkey = "0.6.4"
 nusb = "0.1.13"
 futures-lite = "2.6.0"
-crossbeam-channel = "0.5.14"
+crossbeam-channel = "0.5.15"
 rfd = "0.15.3"
 rdev = "0.5.3"
 ddc = "0.3.0"
@@ -26,6 +26,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["std", "env-filter"] }
 tracing-appender = "0.2.3"
 directories = "6.0.0"
+rustautogui = "2.4.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ddc-winapi = { git = "https://github.com/arcnmx/ddc-winapi-rs" }
