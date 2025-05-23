@@ -9,7 +9,7 @@ local error_handler = function(err)
 end
 
 local hotkey_callback = function(hk)
-  local ok, dev = xpcall(open, error_handler, VENDOR_ID, PRODUCT_ID)
+  local ok, dev = xpcall(device_open, error_handler, VENDOR_ID, PRODUCT_ID)
   if not ok then
     return
   end

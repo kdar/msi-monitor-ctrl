@@ -1,4 +1,4 @@
-local dev = open(0x1462, 0x3fa4)
+local dev = device_open(0x1462, 0x3fa4)
 if dev:get_input() == 2 then
   dev:set_input(3)
 else
