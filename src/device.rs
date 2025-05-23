@@ -58,6 +58,21 @@ impl MSIDevice {
     });
   }
 
+  pub(crate) fn is_connected(vendor_id: u16, product_id: u16) -> Result<bool, Box<StdError>> {
+    for _ in 0..3 {
+      for device in rusb::devices()?.iter() {
+        let device_desc = device.device_descriptor()?;
+
+        if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
+          return Ok(true);
+        }
+      }
+      thread::sleep(Duration::from_millis(200));
+    }
+
+    Ok(false)
+  }
+
   fn get_uart_cmd(&mut self, packet: [u8; 64]) -> Result<([u8; 64], u32), Box<StdError>> {
     let mut buf = [0x00; 64];
 

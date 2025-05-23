@@ -62,7 +62,12 @@ local Device = {}
 ---@param vendor_id integer
 ---@param product_id integer
 ---@return Device
-function open(vendor_id, product_id) end
+function device_open(vendor_id, product_id) end
+
+---@param vendor_id integer
+---@param product_id integer
+---@return boolean
+function device_is_connected(vendor_id, product_id) end
 
 ---@param self self
 ---@return integer

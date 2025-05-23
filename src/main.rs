@@ -16,6 +16,7 @@ use std::{
 };
 
 use clap::Parser;
+use device_query::DeviceQuery;
 use directories::ProjectDirs;
 use errors::StdError;
 use futures_lite::stream;
@@ -175,11 +176,19 @@ fn run() -> Result<(), Box<StdError>> {
     }
   });
 
-  let open = lua.create_function(
+  let device_open = lua.create_function(
     |_, (vendor_id, product_id): (u16, u16)| -> Result<device::MSIDevice, mlua::Error> {
       let dev = device::MSIDevice::open(vendor_id, product_id)
         .map_err(mlua::ExternalError::into_lua_err)?;
       Ok(dev)
+    },
+  )?;
+
+  let device_is_connected = lua.create_function(
+    |_, (vendor_id, product_id): (u16, u16)| -> Result<bool, mlua::Error> {
+      let connected = device::MSIDevice::is_connected(vendor_id, product_id)
+        .map_err(mlua::ExternalError::into_lua_err)?;
+      Ok(connected)
     },
   )?;
 
@@ -398,7 +407,8 @@ fn run() -> Result<(), Box<StdError>> {
   })?;
 
   let globals = lua.globals();
-  globals.set("open", &open)?;
+  globals.set("device_open", &device_open)?;
+  globals.set("device_is_connected", &device_is_connected)?;
   globals.set("msgbox", &msgbox)?;
   globals.set("sleep_ms", &sleep_ms)?;
   globals.set("register_hotkey", &register_hotkey)?;
@@ -426,7 +436,7 @@ fn run() -> Result<(), Box<StdError>> {
       *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
       if let Ok(mut ic) = interval_callbacks_clone.lock() {
-        for (k, v) in &mut *ic {
+        for (_k, v) in &mut *ic {
           if std::time::Instant::now() >= v.2 {
             v.0.call::<()>(()).unwrap();
             v.2 = std::time::Instant::now() + std::time::Duration::from_millis(v.1);
@@ -438,26 +448,6 @@ fn run() -> Result<(), Box<StdError>> {
         let hk = hotkeys_clone.lock().unwrap();
         for (hk, callback) in hk.iter() {
           if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
-            // // This releases the modifer key which could cause it to get stuck if
-            // // we were to switch KVM.
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::ALT) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
-            // }
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::CONTROL) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
-            // }
-            // if hk.mods.contains(
-            //   global_hotkey::hotkey::Modifiers::META | global_hotkey::hotkey::Modifiers::SUPER,
-            // ) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
-            // }
-            // if hk.mods.contains(global_hotkey::hotkey::Modifiers::SHIFT) {
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
-            //   rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
-            // }
-
             callback.call::<()>((hk.to_string(),)).unwrap();
           }
         }
@@ -465,6 +455,36 @@ fn run() -> Result<(), Box<StdError>> {
 
       if let Ok(hotplug_event) = rx.try_recv() {
         let hp = hotplug_clone.lock().unwrap();
+        if let HotplugEvent::Connected(_) = hotplug_event {
+          // When we connect again, make sure all our modifier keys are not pressed down.
+          let device_state = device_query::DeviceState::new();
+          let keys = device_state.get_keys();
+          if keys.contains(&device_query::Keycode::LAlt) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::RAlt) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::AltGr)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::LControl) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::RControl) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::LShift) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::RShift) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::LMeta) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
+          }
+          if keys.contains(&device_query::Keycode::RMeta) {
+            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
+          }
+        }
+
         if let Some(cb) = hp.clone() {
           match hotplug_event {
             HotplugEvent::Connected(d) => {

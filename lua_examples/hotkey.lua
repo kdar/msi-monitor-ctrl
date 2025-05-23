@@ -1,5 +1,5 @@
 local callback = function()
-  local dev = open(0x1462, 0x3fa4)
+  local dev = device_open(0x1462, 0x3fa4)
   dev:set_input(3)
   dev:set_kvm(2)
 end
