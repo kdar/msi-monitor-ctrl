@@ -228,11 +228,18 @@ fn run() -> Result<(), Box<StdError>> {
   let interval_callbacks = Arc::new(Mutex::new(HashMap::new()));
   let interval_callbacks_clone = interval_callbacks.clone();
   let register_interval = lua.create_function(
-    move |_, (interval, callback): (u64, Function)| -> Result<usize, mlua::Error> {
+    move |_,
+          (lo_interval, hi_interval, callback): (u64, u64, Function)|
+          -> Result<usize, mlua::Error> {
+      if lo_interval > hi_interval {
+        return Err(mlua::Error::external("lo_interval must be <= hi_interval"));
+      }
+
       let mut ic = interval_callbacks_clone.lock().unwrap();
       let id = get_interval_id();
+      let interval = rand::random_range(lo_interval..=hi_interval);
       let next = std::time::Instant::now() + Duration::from_millis(interval);
-      ic.insert(id, (callback, interval, next));
+      ic.insert(id, (callback, (lo_interval, hi_interval), next));
       Ok(id)
     },
   )?;
@@ -439,7 +446,8 @@ fn run() -> Result<(), Box<StdError>> {
         for (_k, v) in &mut *ic {
           if std::time::Instant::now() >= v.2 {
             v.0.call::<()>(()).unwrap();
-            v.2 = std::time::Instant::now() + std::time::Duration::from_millis(v.1);
+            let interval = rand::random_range(v.1.0..=v.1.1);
+            v.2 = std::time::Instant::now() + std::time::Duration::from_millis(interval);
           }
         }
       }
