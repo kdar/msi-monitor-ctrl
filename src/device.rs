@@ -1,4 +1,4 @@
-use std::{error::Error, thread, time::Duration};
+use std::{thread, time::Duration};
 
 use rusb::{
   Device, DeviceDescriptor, DeviceHandle, Direction, GlobalContext, TransferType, UsbContext,
@@ -137,11 +137,11 @@ impl MSIDevice {
   //   Ok(value)
   // }
 
-  pub(crate) fn test(&mut self) -> Result<u32, Box<StdError>> {
-    let packet = make_packet(&[INDEX, 53, 56, 48, 48, 49, 51, 48, 13]);
-    let (_, value) = self.get_uart_cmd(packet)?;
-    Ok(value)
-  }
+  // pub(crate) fn test(&mut self) -> Result<u32, Box<StdError>> {
+  //   let packet = make_packet(&[INDEX, 53, 56, 48, 48, 49, 51, 48, 13]);
+  //   let (_, value) = self.get_uart_cmd(packet)?;
+  //   Ok(value)
+  // }
 
   pub(crate) fn get_kvm(&mut self) -> Result<u32, Box<StdError>> {
     let packet = make_packet(&[INDEX, 0x35, 0x38, 0x30, 0x30, 0x38, 0x3e, 0x30, 0xd]);

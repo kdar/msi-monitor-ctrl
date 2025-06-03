@@ -47,10 +47,15 @@ function move_mouse(x, y, moving_time, mode) end
 ---@return number ... Width and height
 function screen_size() end
 
----@param interval number Interval time in milliseconds.
+---@param lo_interval number Low interval time in milliseconds.
+---@param hi_interval number High interval time in milliseconds.
 ---@param callback function   
 ---@return number id An ID you can use to call unregister_interval.
-function register_interval(interval, callback) end
+---Register an interval on which to execute a function. A random
+---number will be chosen between lo_interval and hi_interval. If
+---they are equal values, it will always use that value to execute
+---the function.
+function register_interval(lo_interval, hi_interval, callback) end
 
 ---@param id number The ID returned from register_interval. 
 ---@return nil
