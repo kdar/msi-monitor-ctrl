@@ -12,7 +12,7 @@ use std::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
   },
   thread,
-  time::{Duration, Instant},
+  time::Duration,
 };
 
 use clap::Parser;
