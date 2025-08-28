@@ -332,9 +332,12 @@ fn run() -> Result<(), Box<StdError>> {
             .set_args(args.as_ref());
         },
         (Some(app_path), None) => {
-          autolaunch
-            .set_app_path(app_path.as_ref())
-            .set_args(&std::env::args().skip(1).collect::<Vec<_>>());
+          autolaunch.set_app_path(app_path.as_ref()).set_args(
+            &std::env::args()
+              .skip(1)
+              .map(|v| format!(r#""{}""#, v))
+              .collect::<Vec<_>>(),
+          );
         },
         (None, Some(args)) => {
           autolaunch
@@ -344,7 +347,12 @@ fn run() -> Result<(), Box<StdError>> {
         (None, None) => {
           autolaunch
             .set_app_path(std::env::current_exe()?.to_str().unwrap())
-            .set_args(&std::env::args().skip(1).collect::<Vec<_>>());
+            .set_args(
+              &std::env::args()
+                .skip(1)
+                .map(|v| format!(r#""{}""#, v))
+                .collect::<Vec<_>>(),
+            );
         },
       };
 
@@ -440,7 +448,8 @@ fn run() -> Result<(), Box<StdError>> {
     let interval_callbacks_clone = interval_callbacks.clone();
     let rx = hotplug_rx.clone();
     event_loop.run(move |_, _, control_flow| {
-      *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+      *control_flow = ControlFlow::Poll;
+      // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
       if let Ok(mut ic) = interval_callbacks_clone.lock() {
         for (_k, v) in &mut *ic {
