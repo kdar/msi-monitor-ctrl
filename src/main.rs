@@ -532,7 +532,9 @@ fn run() -> Result<(), Box<StdError>> {
           if let Some(e) = edge
             && let Some(cb) = screen_edge_clone.lock().unwrap().as_ref()
           {
-            cb.call::<()>((e,)).unwrap();
+            if let Err(err) = cb.call::<()>((e,)) {
+              event!(Level::ERROR, "screen_edge callback: {}", err);
+            }
           }
           last_screen_edge = edge;
         }
@@ -541,7 +543,9 @@ fn run() -> Result<(), Box<StdError>> {
       if let Ok(mut ic) = interval_callbacks_clone.lock() {
         for (_k, v) in &mut *ic {
           if std::time::Instant::now() >= v.2 {
-            v.0.call::<()>(()).unwrap();
+            if let Err(err) = v.0.call::<()>(()) {
+              event!(Level::ERROR, "interval callback: {}", err);
+            }
             let interval = rand::random_range(v.1.0..=v.1.1);
             v.2 = std::time::Instant::now() + std::time::Duration::from_millis(interval);
           }
@@ -552,7 +556,9 @@ fn run() -> Result<(), Box<StdError>> {
         let hk = hotkeys_clone.lock().unwrap();
         for (hk, callback) in hk.iter() {
           if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
-            callback.call::<()>((hk.to_string(),)).unwrap();
+            if let Err(err) = callback.call::<()>((hk.to_string(),)) {
+              event!(Level::ERROR, "hotkey callback: {}", err);
+            }
           }
         }
       }
@@ -592,16 +598,22 @@ fn run() -> Result<(), Box<StdError>> {
         if let Some(cb) = hp.clone() {
           match hotplug_event {
             HotplugEvent::Connected(d) => {
-              cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
-                .unwrap();
+              if let Err(err) =
+                cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
+              {
+                event!(Level::ERROR, "hotplug connected callback: {}", err);
+              }
               let mut devices = devices_clone.lock().unwrap();
               devices.insert(d.id(), d);
             },
             HotplugEvent::Disconnected(id) => {
               let mut devices = devices_clone.lock().unwrap();
               if let Some(d) = devices.get(&id) {
-                cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
-                  .unwrap();
+                if let Err(err) =
+                  cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
+                {
+                  event!(Level::ERROR, "hotplug disconnected callback: {}", err);
+                }
                 devices.remove(&id);
               }
             },
