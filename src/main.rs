@@ -504,22 +504,24 @@ fn run() -> Result<(), Box<StdError>> {
     let rx = hotplug_rx.clone();
     let mut last_screen_edge: Option<&'static str> = None;
     let mut last_edge_check = std::time::Instant::now();
-    let mut cached_displays: Vec<DisplayInfo> = DisplayInfo::all().unwrap_or_default();
-    let mut last_displays_refresh = std::time::Instant::now();
+    let mut cached_displays: Vec<DisplayInfo> = Vec::new();
+    let mut last_displays_refresh: Option<std::time::Instant> = None;
     event_loop.run(move |_, _, control_flow| {
       *control_flow = ControlFlow::Poll;
       // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
       if screen_edge_clone.lock().unwrap().is_some()
-        && last_edge_check.elapsed() >= Duration::from_millis(16)
+        && last_edge_check.elapsed() >= Duration::from_millis(50)
       {
         last_edge_check = std::time::Instant::now();
 
-        if last_displays_refresh.elapsed() >= Duration::from_secs(5) {
+        let needs_refresh = last_displays_refresh
+          .map_or(true, |t| t.elapsed() >= Duration::from_secs(5));
+        if needs_refresh {
           if let Ok(d) = DisplayInfo::all() {
             cached_displays = d;
           }
-          last_displays_refresh = std::time::Instant::now();
+          last_displays_refresh = Some(std::time::Instant::now());
         }
 
         let edge = match Mouse::get_mouse_position() {
