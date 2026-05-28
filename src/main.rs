@@ -438,7 +438,14 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("move_mouse", &move_mouse)?;
   globals.set("screen_size", &screen_size)?;
 
-  lua.load(args.cmd).exec()?;
+  let cmd_path = std::path::Path::new(&args.cmd);
+  if cmd_path.is_file() {
+    let source = std::fs::read_to_string(cmd_path)
+      .map_err(|e| mlua::Error::RuntimeError(format!("could not read '{}': {}", args.cmd, e)))?;
+    lua.load(&source).set_name(&args.cmd).exec()?;
+  } else {
+    lua.load(&args.cmd).exec()?;
+  }
 
   if DO_MAIN_LOOP.load(Ordering::Relaxed) {
     event!(Level::INFO, "starting main loop");
