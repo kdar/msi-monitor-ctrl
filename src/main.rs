@@ -18,10 +18,12 @@ use std::{
 use clap::Parser;
 use device_query::DeviceQuery;
 use directories::ProjectDirs;
+use display_info::DisplayInfo;
 use errors::StdError;
 use futures_lite::stream;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use mlua::{ExternalError, Function, Lua};
+use mouse_position::mouse_position::Mouse;
 use nusb::hotplug::HotplugEvent;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 use rustautogui::RustAutoGui;
@@ -36,6 +38,40 @@ static INTERVAL_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 fn get_interval_id() -> usize {
   INTERVAL_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+// Returns "n", "s", "w", "e", "ne", "nw", "se", "sw" if the mouse is at a
+// screen edge/corner where it cannot move further in that direction across
+// any of the displays. Returns None otherwise.
+fn find_screen_edge(displays: &[DisplayInfo], x: i32, y: i32) -> Option<&'static str> {
+  let in_display = |px: i32, py: i32| -> bool {
+    displays.iter().any(|d| {
+      let dw = d.width as i32;
+      let dh = d.height as i32;
+      px >= d.x && px < d.x + dw && py >= d.y && py < d.y + dh
+    })
+  };
+
+  if !in_display(x, y) {
+    return None;
+  }
+
+  let at_left = !in_display(x - 1, y);
+  let at_right = !in_display(x + 1, y);
+  let at_top = !in_display(x, y - 1);
+  let at_bottom = !in_display(x, y + 1);
+
+  match (at_top, at_bottom, at_left, at_right) {
+    (true, _, true, _) => Some("nw"),
+    (true, _, _, true) => Some("ne"),
+    (_, true, true, _) => Some("sw"),
+    (_, true, _, true) => Some("se"),
+    (true, _, _, _) => Some("n"),
+    (_, true, _, _) => Some("s"),
+    (_, _, true, _) => Some("w"),
+    (_, _, _, true) => Some("e"),
+    _ => None,
+  }
 }
 
 // We wrap GlobalHotKeyManager so we can send it across threads. This is
@@ -222,6 +258,15 @@ fn run() -> Result<(), Box<StdError>> {
     lua.create_function(move |_, callback: Function| -> Result<(), mlua::Error> {
       let mut hp = hotplug_clone.lock().unwrap();
       *hp = Some(callback);
+      Ok(())
+    })?;
+
+  let screen_edge: Arc<Mutex<Option<Function>>> = Arc::new(Mutex::new(None));
+  let screen_edge_clone = screen_edge.clone();
+  let register_screen_edge =
+    lua.create_function(move |_, callback: Function| -> Result<(), mlua::Error> {
+      let mut se = screen_edge_clone.lock().unwrap();
+      *se = Some(callback);
       Ok(())
     })?;
 
@@ -428,12 +473,14 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("sleep_ms", &sleep_ms)?;
   globals.set("register_hotkey", &register_hotkey)?;
   globals.set("register_hotplug", &register_hotplug)?;
+  globals.set("register_screen_edge", &register_screen_edge)?;
   globals.set("main_loop", &main_loop)?;
   globals.set("host_os", std::env::consts::OS)?;
   globals.set("host_arch", std::env::consts::ARCH)?;
   globals.set("host_family", std::env::consts::FAMILY)?;
   globals.set("autorun", autorun)?;
   globals.set("register_interval", &register_interval)?;
+  
   globals.set("unregister_interval", &unregister_interval)?;
   globals.set("move_mouse", &move_mouse)?;
   globals.set("screen_size", &screen_size)?;
@@ -453,10 +500,41 @@ fn run() -> Result<(), Box<StdError>> {
     let hotplug_clone = hotplug.clone();
     let devices_clone = devices.clone();
     let interval_callbacks_clone = interval_callbacks.clone();
+    let screen_edge_clone = screen_edge.clone();
     let rx = hotplug_rx.clone();
+    let mut last_screen_edge: Option<&'static str> = None;
+    let mut last_edge_check = std::time::Instant::now();
+    let mut cached_displays: Vec<DisplayInfo> = DisplayInfo::all().unwrap_or_default();
+    let mut last_displays_refresh = std::time::Instant::now();
     event_loop.run(move |_, _, control_flow| {
       *control_flow = ControlFlow::Poll;
       // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+
+      if screen_edge_clone.lock().unwrap().is_some()
+        && last_edge_check.elapsed() >= Duration::from_millis(16)
+      {
+        last_edge_check = std::time::Instant::now();
+
+        if last_displays_refresh.elapsed() >= Duration::from_secs(5) {
+          if let Ok(d) = DisplayInfo::all() {
+            cached_displays = d;
+          }
+          last_displays_refresh = std::time::Instant::now();
+        }
+
+        let edge = match Mouse::get_mouse_position() {
+          Mouse::Position { x, y } => find_screen_edge(&cached_displays, x, y),
+          Mouse::Error => None,
+        };
+        if edge != last_screen_edge {
+          if let Some(e) = edge
+            && let Some(cb) = screen_edge_clone.lock().unwrap().as_ref()
+          {
+            cb.call::<()>((e,)).unwrap();
+          }
+          last_screen_edge = edge;
+        }
+      }
 
       if let Ok(mut ic) = interval_callbacks_clone.lock() {
         for (_k, v) in &mut *ic {
