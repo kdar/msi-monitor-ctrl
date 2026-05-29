@@ -6,3 +6,7 @@ This is useful for switching to Linux or OSX where Gaming Intelligence is not su
 ## Why use nusb and rusb?
 
 I attempted to use nusb but it required to install WinUSB on windows which prevents MSI's "Gaming Intelligence" app from working anymore. I only use nusb for USB hotplug and rusb for actually writing to the monitor.
+
+## Linux dependencies
+
+On Linux display-info requires to install `libxcb`、`libxrandr`.
