@@ -3,33 +3,44 @@
   windows_subsystem = "windows"
 )]
 
-use std::{
-  collections::HashMap,
-  io::IsTerminal,
-  str::FromStr,
-  sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-  },
-  thread,
-  time::Duration,
-};
+use std::collections::HashMap;
+use std::io::IsTerminal;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::Duration;
 
 use clap::Parser;
 use device_query::DeviceQuery;
 use directories::ProjectDirs;
 use display_info::DisplayInfo;
 use errors::StdError;
-use futures_lite::stream;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
-use mlua::{ExternalError, Function, Lua};
+use global_hotkey::GlobalHotKeyEvent;
+use global_hotkey::GlobalHotKeyManager;
+use global_hotkey::HotKeyState;
+use global_hotkey::hotkey::HotKey;
+use mlua::ExternalError;
+use mlua::Function;
+use mlua::Lua;
 use mouse_position::mouse_position::Mouse;
+use nusb::MaybeFuture;
 use nusb::hotplug::HotplugEvent;
-use rfd::{MessageButtons, MessageDialog, MessageLevel};
+use rfd::MessageButtons;
+use rfd::MessageDialog;
+use rfd::MessageLevel;
 use rustautogui::RustAutoGui;
-use tao::event_loop::{ControlFlow, EventLoop};
-use tracing::{Level, event, level_filters::LevelFilter};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tao::event_loop::ControlFlow;
+use tao::event_loop::EventLoop;
+use tracing::Level;
+use tracing::event;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod device;
 mod errors;
@@ -66,8 +77,8 @@ fn find_screen_edge(displays: &[DisplayInfo], x: i32, y: i32) -> Option<&'static
     (true, _, _, true) => Some("ne"),
     (_, true, true, _) => Some("sw"),
     (_, true, _, true) => Some("se"),
-    (true, _, _, _) => Some("n"),
-    (_, true, _, _) => Some("s"),
+    (true, ..) => Some("n"),
+    (_, true, ..) => Some("s"),
     (_, _, true, _) => Some("w"),
     (_, _, _, true) => Some("e"),
     _ => None,
@@ -207,7 +218,8 @@ fn run() -> Result<(), Box<StdError>> {
 
   let (hotplug_tx, hotplug_rx) = crossbeam_channel::unbounded();
   std::thread::spawn(move || {
-    for event in stream::block_on(nusb::watch_devices().unwrap()) {
+    let watch = nusb::watch_devices().unwrap();
+    for event in futures_lite::stream::block_on(watch) {
       hotplug_tx.send(event).unwrap();
     }
   });
@@ -359,7 +371,11 @@ fn run() -> Result<(), Box<StdError>> {
   )?;
 
   let devices: Arc<Mutex<HashMap<nusb::DeviceId, nusb::DeviceInfo>>> = Arc::new(Mutex::new(
-    nusb::list_devices().unwrap().map(|d| (d.id(), d)).collect(),
+    nusb::list_devices()
+      .wait()
+      .unwrap()
+      .map(|d| (d.id(), d))
+      .collect(),
   ));
 
   let autorun = lua.create_function(
@@ -368,7 +384,7 @@ fn run() -> Result<(), Box<StdError>> {
 
       autolaunch
         .set_app_name(env!("CARGO_CRATE_NAME"))
-        .set_use_launch_agent(true);
+        .set_macos_launch_mode(auto_launch::MacOSLaunchMode::LaunchAgent);
 
       match (app_path, args) {
         (Some(app_path), Some(args)) => {
@@ -480,7 +496,7 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("host_family", std::env::consts::FAMILY)?;
   globals.set("autorun", autorun)?;
   globals.set("register_interval", &register_interval)?;
-  
+
   globals.set("unregister_interval", &unregister_interval)?;
   globals.set("move_mouse", &move_mouse)?;
   globals.set("screen_size", &screen_size)?;
@@ -515,8 +531,8 @@ fn run() -> Result<(), Box<StdError>> {
       {
         last_edge_check = std::time::Instant::now();
 
-        let needs_refresh = last_displays_refresh
-          .map_or(true, |t| t.elapsed() >= Duration::from_secs(5));
+        let needs_refresh =
+          last_displays_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(5));
         if needs_refresh {
           if let Ok(d) = DisplayInfo::all() {
             cached_displays = d;
@@ -525,7 +541,10 @@ fn run() -> Result<(), Box<StdError>> {
         }
 
         let edge = match Mouse::get_mouse_position() {
-          Mouse::Position { x, y } => find_screen_edge(&cached_displays, x, y),
+          Mouse::Position {
+            x,
+            y,
+          } => find_screen_edge(&cached_displays, x, y),
           Mouse::Error => None,
         };
         if edge != last_screen_edge {
@@ -598,9 +617,7 @@ fn run() -> Result<(), Box<StdError>> {
         if let Some(cb) = hp.clone() {
           match hotplug_event {
             HotplugEvent::Connected(d) => {
-              if let Err(err) =
-                cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
-              {
+              if let Err(err) = cb.call::<()>(("connected", d.vendor_id(), d.product_id())) {
                 event!(Level::ERROR, "hotplug connected callback: {}", err);
               }
               let mut devices = devices_clone.lock().unwrap();
@@ -609,9 +626,7 @@ fn run() -> Result<(), Box<StdError>> {
             HotplugEvent::Disconnected(id) => {
               let mut devices = devices_clone.lock().unwrap();
               if let Some(d) = devices.get(&id) {
-                if let Err(err) =
-                  cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
-                {
+                if let Err(err) = cb.call::<()>(("disconnected", d.vendor_id(), d.product_id())) {
                   event!(Level::ERROR, "hotplug disconnected callback: {}", err);
                 }
                 devices.remove(&id);
