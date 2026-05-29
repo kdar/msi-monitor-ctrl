@@ -22,6 +22,14 @@ function register_hotkey(hotkey, callback) end
 ---@return nil
 function register_hotplug(hotkey, callback) end
 
+---@param callback fun(edge: "n"|"s"|"w"|"e"|"ne"|"nw"|"se"|"sw"): nil
+---@return nil
+---Register a callback fired when the mouse enters a screen edge or corner.
+---The callback receives one of "n", "s", "w", "e", "ne", "nw", "se", "sw"
+---and fires once per zone entry — it does not repeat while the mouse stays
+---in the same zone.
+function register_screen_edge(callback) end
+
 ---@return nil
 function main_loop() end
 

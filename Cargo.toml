@@ -29,6 +29,8 @@ directories = "6.0.0"
 rustautogui = { version = "2.5.0", features = ["lite"] }
 device_query = "3.0.1"
 rand = "0.9.2"
+mouse_position = "0.1.4"
+display-info = "0.5.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ddc-winapi = { git = "https://github.com/arcnmx/ddc-winapi-rs" }
