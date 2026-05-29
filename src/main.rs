@@ -18,10 +18,12 @@ use std::{
 use clap::Parser;
 use device_query::DeviceQuery;
 use directories::ProjectDirs;
+use display_info::DisplayInfo;
 use errors::StdError;
 use futures_lite::stream;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use mlua::{ExternalError, Function, Lua};
+use mouse_position::mouse_position::Mouse;
 use nusb::hotplug::HotplugEvent;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 use rustautogui::RustAutoGui;
@@ -36,6 +38,40 @@ static INTERVAL_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 fn get_interval_id() -> usize {
   INTERVAL_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+// Returns "n", "s", "w", "e", "ne", "nw", "se", "sw" if the mouse is at a
+// screen edge/corner where it cannot move further in that direction across
+// any of the displays. Returns None otherwise.
+fn find_screen_edge(displays: &[DisplayInfo], x: i32, y: i32) -> Option<&'static str> {
+  let in_display = |px: i32, py: i32| -> bool {
+    displays.iter().any(|d| {
+      let dw = d.width as i32;
+      let dh = d.height as i32;
+      px >= d.x && px < d.x + dw && py >= d.y && py < d.y + dh
+    })
+  };
+
+  if !in_display(x, y) {
+    return None;
+  }
+
+  let at_left = !in_display(x - 1, y);
+  let at_right = !in_display(x + 1, y);
+  let at_top = !in_display(x, y - 1);
+  let at_bottom = !in_display(x, y + 1);
+
+  match (at_top, at_bottom, at_left, at_right) {
+    (true, _, true, _) => Some("nw"),
+    (true, _, _, true) => Some("ne"),
+    (_, true, true, _) => Some("sw"),
+    (_, true, _, true) => Some("se"),
+    (true, _, _, _) => Some("n"),
+    (_, true, _, _) => Some("s"),
+    (_, _, true, _) => Some("w"),
+    (_, _, _, true) => Some("e"),
+    _ => None,
+  }
 }
 
 // We wrap GlobalHotKeyManager so we can send it across threads. This is
@@ -222,6 +258,15 @@ fn run() -> Result<(), Box<StdError>> {
     lua.create_function(move |_, callback: Function| -> Result<(), mlua::Error> {
       let mut hp = hotplug_clone.lock().unwrap();
       *hp = Some(callback);
+      Ok(())
+    })?;
+
+  let screen_edge: Arc<Mutex<Option<Function>>> = Arc::new(Mutex::new(None));
+  let screen_edge_clone = screen_edge.clone();
+  let register_screen_edge =
+    lua.create_function(move |_, callback: Function| -> Result<(), mlua::Error> {
+      let mut se = screen_edge_clone.lock().unwrap();
+      *se = Some(callback);
       Ok(())
     })?;
 
@@ -428,17 +473,26 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("sleep_ms", &sleep_ms)?;
   globals.set("register_hotkey", &register_hotkey)?;
   globals.set("register_hotplug", &register_hotplug)?;
+  globals.set("register_screen_edge", &register_screen_edge)?;
   globals.set("main_loop", &main_loop)?;
   globals.set("host_os", std::env::consts::OS)?;
   globals.set("host_arch", std::env::consts::ARCH)?;
   globals.set("host_family", std::env::consts::FAMILY)?;
   globals.set("autorun", autorun)?;
   globals.set("register_interval", &register_interval)?;
+  
   globals.set("unregister_interval", &unregister_interval)?;
   globals.set("move_mouse", &move_mouse)?;
   globals.set("screen_size", &screen_size)?;
 
-  lua.load(args.cmd).exec()?;
+  let cmd_path = std::path::Path::new(&args.cmd);
+  if cmd_path.is_file() {
+    let source = std::fs::read_to_string(cmd_path)
+      .map_err(|e| mlua::Error::RuntimeError(format!("could not read '{}': {}", args.cmd, e)))?;
+    lua.load(&source).set_name(&args.cmd).exec()?;
+  } else {
+    lua.load(&args.cmd).exec()?;
+  }
 
   if DO_MAIN_LOOP.load(Ordering::Relaxed) {
     event!(Level::INFO, "starting main loop");
@@ -446,15 +500,52 @@ fn run() -> Result<(), Box<StdError>> {
     let hotplug_clone = hotplug.clone();
     let devices_clone = devices.clone();
     let interval_callbacks_clone = interval_callbacks.clone();
+    let screen_edge_clone = screen_edge.clone();
     let rx = hotplug_rx.clone();
+    let mut last_screen_edge: Option<&'static str> = None;
+    let mut last_edge_check = std::time::Instant::now();
+    let mut cached_displays: Vec<DisplayInfo> = Vec::new();
+    let mut last_displays_refresh: Option<std::time::Instant> = None;
     event_loop.run(move |_, _, control_flow| {
       *control_flow = ControlFlow::Poll;
       // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
 
+      if screen_edge_clone.lock().unwrap().is_some()
+        && last_edge_check.elapsed() >= Duration::from_millis(50)
+      {
+        last_edge_check = std::time::Instant::now();
+
+        let needs_refresh = last_displays_refresh
+          .map_or(true, |t| t.elapsed() >= Duration::from_secs(5));
+        if needs_refresh {
+          if let Ok(d) = DisplayInfo::all() {
+            cached_displays = d;
+          }
+          last_displays_refresh = Some(std::time::Instant::now());
+        }
+
+        let edge = match Mouse::get_mouse_position() {
+          Mouse::Position { x, y } => find_screen_edge(&cached_displays, x, y),
+          Mouse::Error => None,
+        };
+        if edge != last_screen_edge {
+          if let Some(e) = edge
+            && let Some(cb) = screen_edge_clone.lock().unwrap().as_ref()
+          {
+            if let Err(err) = cb.call::<()>((e,)) {
+              event!(Level::ERROR, "screen_edge callback: {}", err);
+            }
+          }
+          last_screen_edge = edge;
+        }
+      }
+
       if let Ok(mut ic) = interval_callbacks_clone.lock() {
         for (_k, v) in &mut *ic {
           if std::time::Instant::now() >= v.2 {
-            v.0.call::<()>(()).unwrap();
+            if let Err(err) = v.0.call::<()>(()) {
+              event!(Level::ERROR, "interval callback: {}", err);
+            }
             let interval = rand::random_range(v.1.0..=v.1.1);
             v.2 = std::time::Instant::now() + std::time::Duration::from_millis(interval);
           }
@@ -465,7 +556,9 @@ fn run() -> Result<(), Box<StdError>> {
         let hk = hotkeys_clone.lock().unwrap();
         for (hk, callback) in hk.iter() {
           if hk.id() == hk_event.id() && hk_event.state == HotKeyState::Released {
-            callback.call::<()>((hk.to_string(),)).unwrap();
+            if let Err(err) = callback.call::<()>((hk.to_string(),)) {
+              event!(Level::ERROR, "hotkey callback: {}", err);
+            }
           }
         }
       }
@@ -505,16 +598,22 @@ fn run() -> Result<(), Box<StdError>> {
         if let Some(cb) = hp.clone() {
           match hotplug_event {
             HotplugEvent::Connected(d) => {
-              cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
-                .unwrap();
+              if let Err(err) =
+                cb.call::<()>(("connected", d.vendor_id(), d.product_id()))
+              {
+                event!(Level::ERROR, "hotplug connected callback: {}", err);
+              }
               let mut devices = devices_clone.lock().unwrap();
               devices.insert(d.id(), d);
             },
             HotplugEvent::Disconnected(id) => {
               let mut devices = devices_clone.lock().unwrap();
               if let Some(d) = devices.get(&id) {
-                cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
-                  .unwrap();
+                if let Err(err) =
+                  cb.call::<()>(("disconnected", d.vendor_id(), d.product_id()))
+                {
+                  event!(Level::ERROR, "hotplug disconnected callback: {}", err);
+                }
                 devices.remove(&id);
               }
             },
