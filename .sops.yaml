@@ -1,5 +1,5 @@
 creation_rules:
-  - path_regex: \.enc$
+  - path_regex: kdar\.lua
     age: >-
-      age1kq463aetlvugsvjd4d8jgrxvjj890f74a8qqt2j84s36stsgzgdqk8rnnh
+      age1kq463aetlvugsvjd4d8jgrxvjj890f74a8qqt2j84s36stsgzgdqk8rnnh,
       age14hreqvln7wstnwwjwh67u64jgnlz4q90m9dseh23gsesm46uq5ash5enhm
