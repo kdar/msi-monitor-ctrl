@@ -105,24 +105,27 @@ below.
   of which input is selected.
 
 - **`kvm_switch.lua`** — the actual daily-use script. Registers `Cmd+Shift+K` as a
-  global hotkey that toggles the video input between position `0` and position `1`
-  (the two machines sharing this monitor). Run it and leave it running in the
-  foreground:
+  global hotkey that toggles both video input (`0`/`1`) and KVM/USB — shared
+  keyboard-mouse-webcam — (`0`/`2`) together, switching fully between the two machines
+  sharing this monitor in one keypress. Requires root (see "macOS permissions" above —
+  raw USB claim needs `sudo` on top of the Input Monitoring grant). Run it and leave it
+  running in the foreground:
   ```
-  ./target/release/msi-monitor-ctrl --cmd kvm_switch.lua
+  sudo ./target/release/msi-monitor-ctrl --cmd kvm_switch.lua
   ```
-  This only switches video input, not KVM/USB (shared keyboard-mouse-webcam) — that's
-  a separate, riskier switch (see `Device:set_kvm` in `definitions.lua`) that isn't
-  wired up here yet.
+  Note the two switches use *different* position numbers (`1` for input, `2` for KVM)
+  even though on this setup they both point at the same physical machine — the two
+  machines are wired differently (one is a combined USB-C cable carrying both video and
+  data, the other has video and USB on separate connectors), and the monitor exposes
+  video-input selection and KVM/USB-host selection as independent commands regardless of
+  physical wiring. If you adapt this for a different monitor/cabling setup, re-derive
+  both position numbers independently — don't assume they match. `sweep_input.lua` and
+  the manual one-off testing pattern used to derive these (see git history) work for
+  that.
 
   If you set this up on a second machine sharing the same monitor, run the identical
-  script there too — it's a toggle, not a "switch to me" command, so the same file
-  works unmodified on either side. One caveat we haven't fully verified: if the
-  monitor's control channel is exclusively bonded to whichever machine currently holds
-  the KVM/USB link (rather than being simultaneously reachable from both wired
-  machines), `device_open` may fail on the second machine until KVM ownership is
-  switched to it first. If you hit `unable to find device` when running this on the
-  other machine, that's the likely explanation — worth confirming empirically.
+  script there too — it's a toggle, not a "switch to me" command, so the same file works
+  unmodified on either side.
 
 ## Running at login
 
