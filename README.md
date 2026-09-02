@@ -105,23 +105,23 @@ below.
   of which input is selected.
 
 - **`kvm_switch.lua`** — the actual daily-use script. Registers `Cmd+Shift+K` as a
-  global hotkey that toggles both video input (`0`/`1`) and KVM/USB — shared
-  keyboard-mouse-webcam — (`0`/`2`) together, switching fully between the two machines
-  sharing this monitor in one keypress. Requires root (see "macOS permissions" above —
+  global hotkey that toggles video input between position `0` and position `1` (the
+  two machines sharing this monitor). Requires root (see "macOS permissions" above —
   raw USB claim needs `sudo` on top of the Input Monitoring grant). Run it and leave it
   running in the foreground:
   ```
   sudo ./target/release/msi-monitor-ctrl --cmd kvm_switch.lua
   ```
-  Note the two switches use *different* position numbers (`1` for input, `2` for KVM)
-  even though on this setup they both point at the same physical machine — the two
-  machines are wired differently (one is a combined USB-C cable carrying both video and
-  data, the other has video and USB on separate connectors), and the monitor exposes
-  video-input selection and KVM/USB-host selection as independent commands regardless of
-  physical wiring. If you adapt this for a different monitor/cabling setup, re-derive
-  both position numbers independently — don't assume they match. `sweep_input.lua` and
-  the manual one-off testing pattern used to derive these (see git history) work for
-  that.
+  This only switches the video/picture — keyboard, mouse, and webcam ownership
+  (KVM/USB, `Device:set_kvm`) are intentionally left alone and stay wherever they're
+  currently wired/switched. We confirmed `Device:set_kvm` positions (`0`/`2` on this
+  setup) work independently via manual testing (see git history), in case combined
+  video+KVM switching is wanted again later — the two switches use *different*
+  position numbers even though they point at the same physical machine, since the two
+  machines are wired differently (one is a combined USB-C cable carrying both video
+  and data, the other has video and USB on separate connectors) and the monitor
+  exposes video-input and KVM/USB-host selection as fully independent commands
+  regardless of physical wiring.
 
   If you set this up on a second machine sharing the same monitor, run the identical
   script there too — it's a toggle, not a "switch to me" command, so the same file works
