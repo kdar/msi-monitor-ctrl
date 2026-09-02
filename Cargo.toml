@@ -11,7 +11,7 @@ keywords = ["msi", "monitor"]
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
-rusb = "0.9.4"
+rusb = { version = "0.9.4", features = ["vendored"] }
 mlua = { version = "0.11.6", features = ["lua54", "vendored", "send"] }
 tao = "0.35.3"
 global-hotkey = "0.8.0"
