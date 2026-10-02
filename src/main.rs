@@ -1001,7 +1001,9 @@ fn run() -> Result<(), Box<StdError>> {
         "pgup" => Key::PageUp,
         "pgdn" => Key::PageDown,
         "del" => Key::Delete,
+        #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
         "print" => Key::PrintScr,
+        #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
         "snapshot" => Key::PrintScr,
         s if s.chars().count() == 1 => Key::Unicode(s.chars().next().unwrap()),
         _ => return Err(mlua::Error::external(format!("unsupported key: {}", key_str))),
