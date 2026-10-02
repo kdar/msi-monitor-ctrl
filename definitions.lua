@@ -55,6 +55,11 @@ function move_mouse(x, y, moving_time, mode) end
 ---@return number ... Width and height
 function screen_size() end
 
+---@param key_str string The key to press (e.g., "return", "a", "shift", "f1"). For single characters, just pass the character.
+---@param direction string "click", "press", or "release" (or "c", "p", "r").
+---@return nil
+function key(key_str, direction) end
+
 ---@param lo_interval number Low interval time in milliseconds.
 ---@param hi_interval number High interval time in milliseconds.
 ---@param callback function   

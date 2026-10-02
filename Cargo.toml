@@ -27,7 +27,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["std", "env-filter"] }
 tracing-appender = "0.2.5"
 directories = "6.0.0"
-rustautogui = { version = "2.5.0", features = ["lite"] }
+enigo = "0.6.1"
 device_query = "4.0.1"
 rand = "0.10.1"
 mouse_position = "0.1.4"

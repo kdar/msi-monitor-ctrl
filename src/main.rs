@@ -32,7 +32,7 @@ use nusb::hotplug::HotplugEvent;
 use rfd::MessageButtons;
 use rfd::MessageDialog;
 use rfd::MessageLevel;
-use rustautogui::RustAutoGui;
+use enigo::{Enigo, Mouse as EnigoMouse, Keyboard as EnigoKeyboard, Settings, Coordinate, Key, Direction};
 use tao::event_loop::ControlFlow;
 use tao::event_loop::EventLoop;
 use tracing::Level;
@@ -95,15 +95,15 @@ unsafe impl Send for WrappedHotKeyManager {}
 #[cfg(target_os = "windows")]
 unsafe impl Sync for WrappedHotKeyManager {}
 
-// We wrap RustAutoGui so we can send it across threads. This is
+// We wrap Enigo so we can send it across threads. This is
 // safe to do for specific windows pointers like HWND since
 // it is unique globally.
-struct WrappedRustAutoGui(rustautogui::RustAutoGui);
+struct WrappedEnigo(Enigo);
 
 #[cfg(target_os = "windows")]
-unsafe impl Send for WrappedRustAutoGui {}
+unsafe impl Send for WrappedEnigo {}
 #[cfg(target_os = "windows")]
-unsafe impl Sync for WrappedRustAutoGui {}
+unsafe impl Sync for WrappedEnigo {}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -424,53 +424,286 @@ fn run() -> Result<(), Box<StdError>> {
     },
   )?;
 
-  let rustautogui = Arc::new(Mutex::new(WrappedRustAutoGui(
-    RustAutoGui::new(false).map_err(|e| e.into_lua_err())?,
+  let enigo_instance = Arc::new(Mutex::new(WrappedEnigo(
+    Enigo::new(&Settings::default()).map_err(|e| e.into_lua_err())?,
   )));
-  let rustautogui_clone = rustautogui.clone();
+  let enigo_clone = enigo_instance.clone();
   let screen_size = lua.create_function(move |_, ()| -> Result<(i32, i32), mlua::Error> {
-    let mut rag = rustautogui_clone.lock().unwrap();
-    Ok(rag.0.get_screen_size())
+    let enigo_guard = enigo_clone.lock().unwrap();
+    enigo_guard.0.main_display().map_err(|e| e.into_lua_err())
   })?;
-  let rustautogui_clone = rustautogui.clone();
+  let enigo_clone = enigo_instance.clone();
   let move_mouse = lua.create_function(
     move |_, (x, y, moving_time, mode): (i64, i64, f32, String)| -> Result<(), mlua::Error> {
-      // Anything > 10.0 is VERY slow and can lock your computer.
-      let moving_time = if moving_time > 10.0 {
-        10.0
-      } else {
-        moving_time
+      let moving_time = if moving_time > 10.0 { 10.0 } else { moving_time };
+
+      let end_x = i32::try_from(x).map_err(|e| e.into_lua_err())?;
+      let end_y = i32::try_from(y).map_err(|e| e.into_lua_err())?;
+
+      let (start_x, start_y) = match Mouse::get_mouse_position() {
+        Mouse::Position { x, y } => (x, y),
+        Mouse::Error => return Err(mlua::Error::external("could not get current mouse position")),
       };
 
-      let rag = rustautogui_clone.lock().unwrap();
-      match mode.as_str() {
-        "rel" => {
-          rag
-            .0
-            .move_mouse(
-              i32::try_from(x).map_err(|e| e.into_lua_err())?,
-              i32::try_from(y).map_err(|e| e.into_lua_err())?,
-              moving_time,
-            )
-            .map_err(|e| e.into_lua_err())?;
-        },
-        "abs" => {
-          rag
-            .0
-            .move_mouse_to_pos(
-              u32::try_from(x).map_err(|e| e.into_lua_err())?,
-              u32::try_from(y).map_err(|e| e.into_lua_err())?,
-              moving_time,
-            )
-            .map_err(|e| e.into_lua_err())?;
-        },
-        _ => {
-          return Err(mlua::Error::external(format!(
-            "unknown move_mouse mode: {}",
-            mode
-          )));
-        },
+      let (target_x, target_y) = match mode.as_str() {
+        "rel" => (start_x + end_x, start_y + end_y),
+        "abs" => (end_x, end_y),
+        _ => return Err(mlua::Error::external(format!("unknown move_mouse mode: {}", mode))),
       };
+
+      let mut enigo_guard = enigo_clone.lock().unwrap();
+      if moving_time <= 0.0 {
+        enigo_guard.0.move_mouse(target_x, target_y, Coordinate::Abs).map_err(|e| e.into_lua_err())?;
+        return Ok(());
+      }
+
+      let start = std::time::Instant::now();
+      let duration = Duration::from_secs_f32(moving_time);
+
+      while start.elapsed() < duration {
+        let progress = start.elapsed().as_secs_f32() / moving_time;
+        let cur_x = start_x as f32 + (target_x as f32 - start_x as f32) * progress;
+        let cur_y = start_y as f32 + (target_y as f32 - start_y as f32) * progress;
+        
+        enigo_guard.0.move_mouse(cur_x as i32, cur_y as i32, Coordinate::Abs).map_err(|e| e.into_lua_err())?;
+        std::thread::sleep(Duration::from_millis(10));
+      }
+      
+      enigo_guard.0.move_mouse(target_x, target_y, Coordinate::Abs).map_err(|e| e.into_lua_err())?;
+      Ok(())
+    },
+  )?;
+
+  let enigo_clone = enigo_instance.clone();
+  let key = lua.create_function(
+    move |_, (key_str, direction): (String, String)| -> Result<(), mlua::Error> {
+      let parsed_key = match key_str.to_lowercase().as_str() {
+        "num0" => Key::Num0,
+        "num1" => Key::Num1,
+        "num2" => Key::Num2,
+        "num3" => Key::Num3,
+        "num4" => Key::Num4,
+        "num5" => Key::Num5,
+        "num6" => Key::Num6,
+        "num7" => Key::Num7,
+        "num8" => Key::Num8,
+        "num9" => Key::Num9,
+        "a" => Key::A,
+        "b" => Key::B,
+        "c" => Key::C,
+        "d" => Key::D,
+        "e" => Key::E,
+        "f" => Key::F,
+        "g" => Key::G,
+        "h" => Key::H,
+        "i" => Key::I,
+        "j" => Key::J,
+        "k" => Key::K,
+        "l" => Key::L,
+        "m" => Key::M,
+        "n" => Key::N,
+        "o" => Key::O,
+        "p" => Key::P,
+        "q" => Key::Q,
+        "r" => Key::R,
+        "s" => Key::S,
+        "t" => Key::T,
+        "u" => Key::U,
+        "v" => Key::V,
+        "w" => Key::W,
+        "x" => Key::X,
+        "y" => Key::Y,
+        "z" => Key::Z,
+        "accept" => Key::Accept,
+        "add" => Key::Add,
+        "alt" => Key::Alt,
+        "apps" => Key::Apps,
+        "backspace" => Key::Backspace,
+        "browserback" => Key::BrowserBack,
+        "browserfavorites" => Key::BrowserFavorites,
+        "browserforward" => Key::BrowserForward,
+        "browserhome" => Key::BrowserHome,
+        "browserrefresh" => Key::BrowserRefresh,
+        "browsersearch" => Key::BrowserSearch,
+        "browserstop" => Key::BrowserStop,
+        "cancel" => Key::Cancel,
+        "capslock" => Key::CapsLock,
+        "control" => Key::Control,
+        "convert" => Key::Convert,
+        "decimal" => Key::Decimal,
+        "delete" => Key::Delete,
+        "divide" => Key::Divide,
+        "downarrow" => Key::DownArrow,
+        "end" => Key::End,
+        "escape" => Key::Escape,
+        "execute" => Key::Execute,
+        "f1" => Key::F1,
+        "f2" => Key::F2,
+        "f3" => Key::F3,
+        "f4" => Key::F4,
+        "f5" => Key::F5,
+        "f6" => Key::F6,
+        "f7" => Key::F7,
+        "f8" => Key::F8,
+        "f9" => Key::F9,
+        "f10" => Key::F10,
+        "f11" => Key::F11,
+        "f12" => Key::F12,
+        "f13" => Key::F13,
+        "f14" => Key::F14,
+        "f15" => Key::F15,
+        "f16" => Key::F16,
+        "f17" => Key::F17,
+        "f18" => Key::F18,
+        "f19" => Key::F19,
+        "final" => Key::Final,
+        "gamepada" => Key::GamepadA,
+        "gamepadb" => Key::GamepadB,
+        "gamepaddpaddown" => Key::GamepadDPadDown,
+        "gamepaddpadleft" => Key::GamepadDPadLeft,
+        "gamepaddpadright" => Key::GamepadDPadRight,
+        "gamepaddpadup" => Key::GamepadDPadUp,
+        "gamepadleftshoulder" => Key::GamepadLeftShoulder,
+        "gamepadleftthumbstickbutton" => Key::GamepadLeftThumbstickButton,
+        "gamepadleftthumbstickdown" => Key::GamepadLeftThumbstickDown,
+        "gamepadleftthumbstickleft" => Key::GamepadLeftThumbstickLeft,
+        "gamepadleftthumbstickright" => Key::GamepadLeftThumbstickRight,
+        "gamepadleftthumbstickup" => Key::GamepadLeftThumbstickUp,
+        "gamepadlefttrigger" => Key::GamepadLeftTrigger,
+        "gamepadmenu" => Key::GamepadMenu,
+        "gamepadrightshoulder" => Key::GamepadRightShoulder,
+        "gamepadrightthumbstickbutton" => Key::GamepadRightThumbstickButton,
+        "gamepadrightthumbstickdown" => Key::GamepadRightThumbstickDown,
+        "gamepadrightthumbstickleft" => Key::GamepadRightThumbstickLeft,
+        "gamepadrightthumbstickright" => Key::GamepadRightThumbstickRight,
+        "gamepadrightthumbstickup" => Key::GamepadRightThumbstickUp,
+        "gamepadrighttrigger" => Key::GamepadRightTrigger,
+        "gamepadview" => Key::GamepadView,
+        "gamepadx" => Key::GamepadX,
+        "gamepady" => Key::GamepadY,
+        "hangeul" => Key::Hangeul,
+        "help" => Key::Help,
+        "home" => Key::Home,
+        "ico00" => Key::Ico00,
+        "icoclear" => Key::IcoClear,
+        "icohelp" => Key::IcoHelp,
+        "imeoff" => Key::IMEOff,
+        "imeon" => Key::IMEOn,
+        "insert" => Key::Insert,
+        "junja" => Key::Junja,
+        "launchapp1" => Key::LaunchApp1,
+        "launchapp2" => Key::LaunchApp2,
+        "launchmail" => Key::LaunchMail,
+        "launchmediaselect" => Key::LaunchMediaSelect,
+        "lbutton" => Key::LButton,
+        "lcontrol" => Key::LControl,
+        "leftarrow" => Key::LeftArrow,
+        "lmenu" => Key::LMenu,
+        "lshift" => Key::LShift,
+        "lwin" => Key::LWin,
+        "mbutton" => Key::MButton,
+        "medianexttrack" => Key::MediaNextTrack,
+        "mediaplaypause" => Key::MediaPlayPause,
+        "mediaprevtrack" => Key::MediaPrevTrack,
+        "mediastop" => Key::MediaStop,
+        "meta" => Key::Meta,
+        "modechange" => Key::ModeChange,
+        "multiply" => Key::Multiply,
+        "navigationaccept" => Key::NavigationAccept,
+        "navigationcancel" => Key::NavigationCancel,
+        "navigationdown" => Key::NavigationDown,
+        "navigationleft" => Key::NavigationLeft,
+        "navigationmenu" => Key::NavigationMenu,
+        "navigationright" => Key::NavigationRight,
+        "navigationup" => Key::NavigationUp,
+        "navigationview" => Key::NavigationView,
+        "none" => Key::None,
+        "numlock" => Key::Numlock,
+        "numpad0" => Key::Numpad0,
+        "numpad1" => Key::Numpad1,
+        "numpad2" => Key::Numpad2,
+        "numpad3" => Key::Numpad3,
+        "numpad4" => Key::Numpad4,
+        "numpad5" => Key::Numpad5,
+        "numpad6" => Key::Numpad6,
+        "numpad7" => Key::Numpad7,
+        "numpad8" => Key::Numpad8,
+        "numpad9" => Key::Numpad9,
+        "oem1" => Key::OEM1,
+        "oem2" => Key::OEM2,
+        "oem3" => Key::OEM3,
+        "oem4" => Key::OEM4,
+        "oem5" => Key::OEM5,
+        "oem6" => Key::OEM6,
+        "oem7" => Key::OEM7,
+        "oem8" => Key::OEM8,
+        "oemax" => Key::OEMAx,
+        "oemcomma" => Key::OEMComma,
+        "oemfjjisho" => Key::OEMFJJisho,
+        "oemfjloya" => Key::OEMFJLoya,
+        "oemfjmasshou" => Key::OEMFJMasshou,
+        "oemfjroya" => Key::OEMFJRoya,
+        "oemfjtouroku" => Key::OEMFJTouroku,
+        "oemminus" => Key::OEMMinus,
+        "oemnecequal" => Key::OEMNECEqual,
+        "oemperiod" => Key::OEMPeriod,
+        "oemplus" => Key::OEMPlus,
+        "option" => Key::Option,
+        "pagedown" => Key::PageDown,
+        "pageup" => Key::PageUp,
+        "pause" => Key::Pause,
+        "print" => Key::PrintScr,
+        "printscr" => Key::PrintScr,
+        "rbutton" => Key::RButton,
+        "rcontrol" => Key::RControl,
+        "return" => Key::Return,
+        "rightarrow" => Key::RightArrow,
+        "rmenu" => Key::RMenu,
+        "rshift" => Key::RShift,
+        "rwin" => Key::RWin,
+        "scroll" => Key::Scroll,
+        "select" => Key::Select,
+        "separator" => Key::Separator,
+        "shift" => Key::Shift,
+        "sleep" => Key::Sleep,
+        "snapshot" => Key::PrintScr,
+        "space" => Key::Space,
+        "subtract" => Key::Subtract,
+        "super" => Key::Meta,
+        "tab" => Key::Tab,
+        "uparrow" => Key::UpArrow,
+        "volumedown" => Key::VolumeDown,
+        "volumemute" => Key::VolumeMute,
+        "volumeup" => Key::VolumeUp,
+        "windows" => Key::Meta,
+        "xbutton1" => Key::XButton1,
+        "xbutton2" => Key::XButton2,
+        "enter" => Key::Return,
+        "esc" => Key::Escape,
+        "up" => Key::UpArrow,
+        "down" => Key::DownArrow,
+        "left" => Key::LeftArrow,
+        "right" => Key::RightArrow,
+        "ctrl" => Key::Control,
+        "cmd" => Key::Meta,
+        "win" => Key::Meta,
+        "super" => Key::Meta,
+        "pgup" => Key::PageUp,
+        "pgdn" => Key::PageDown,
+        "del" => Key::Delete,
+        s if s.chars().count() == 1 => Key::Unicode(s.chars().next().unwrap()),
+        _ => return Err(mlua::Error::external(format!("unsupported key: {}", key_str))),
+      };
+      
+      let parsed_dir = match direction.to_lowercase().as_str() {
+        "press" | "p" => Direction::Press,
+        "release" | "r" => Direction::Release,
+        "click" | "c" => Direction::Click,
+        _ => return Err(mlua::Error::external(format!("unsupported direction: {}", direction))),
+      };
+      
+      let mut enigo_guard = enigo_clone.lock().unwrap();
+      enigo_guard.0.key(parsed_key, parsed_dir).map_err(|e| e.into_lua_err())?;
       Ok(())
     },
   )?;
@@ -500,6 +733,7 @@ fn run() -> Result<(), Box<StdError>> {
   globals.set("unregister_interval", &unregister_interval)?;
   globals.set("move_mouse", &move_mouse)?;
   globals.set("screen_size", &screen_size)?;
+  globals.set("key", &key)?;
 
   let cmd_path = std::path::Path::new(&args.cmd);
   if cmd_path.is_file() {
