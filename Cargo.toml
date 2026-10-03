@@ -3,25 +3,21 @@ name = "msi-monitor-ctrl"
 version = "0.1.1"
 edition = "2024"
 authors = ["Kevin Darlington <kevin@outroot.com>"]
-readme = "README.md"
 repository = "https://github.com/kdar/msi-monitor-ctrl"
-homepage = "https://github.com/kdar/msi-monitor-ctrl"
 
 keywords = ["msi", "monitor"]
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 rusb = "0.9.4"
-mlua = { version = "0.11.6", features = ["lua54", "vendored", "send"] }
-tao = "0.35.3"
+mlua = { version = "0.12.2", features = ["lua54", "vendored", "send"] }
+tao = "0.37.1"
 global-hotkey = "0.8.0"
 nusb = { version = "0.2.3", features = [] }
-tokio = { version = "1", features = ["rt"] }
 futures-lite = "2.6.1"
 crossbeam-channel = "0.5.15"
 rfd = "0.17.2"
 rdev = "0.5.3"
-ddc = "0.3.0"
 auto-launch = "0.6.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["std", "env-filter"] }
@@ -34,7 +30,6 @@ mouse_position = "0.1.4"
 display-info = "0.5.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-ddc-winapi = { git = "https://github.com/arcnmx/ddc-winapi-rs" }
 windows = { version = "0.62.2", features = ["Win32_System_Console"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -1,8 +1,13 @@
-use std::{thread, time::Duration};
+use std::thread;
+use std::time::Duration;
 
-use rusb::{
-  Device, DeviceDescriptor, DeviceHandle, Direction, GlobalContext, TransferType, UsbContext,
-};
+use rusb::Device;
+use rusb::DeviceDescriptor;
+use rusb::DeviceHandle;
+use rusb::Direction;
+use rusb::GlobalContext;
+use rusb::TransferType;
+use rusb::UsbContext;
 
 use super::errors::StdError;
 
@@ -51,11 +56,11 @@ impl MSIDevice {
     };
     configure_endpoint(&mut device_handle, &in_endpoint)?;
 
-    return Ok(Self {
+    Ok(Self {
       device_handle,
       in_endpoint,
       out_endpoint,
-    });
+    })
   }
 
   pub(crate) fn is_connected(vendor_id: u16, product_id: u16) -> Result<bool, Box<StdError>> {
