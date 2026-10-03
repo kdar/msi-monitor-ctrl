@@ -213,6 +213,16 @@ use nusb::MaybeFuture;
   };
 
   api::register(&lua, state.clone()).unwrap();
+
+  let cmd_path = std::path::Path::new(&args.cmd);
+  if cmd_path.is_file() {
+    let source = std::fs::read_to_string(cmd_path)
+      .map_err(|e| mlua::Error::RuntimeError(format!("could not read '{}': {}", args.cmd, e)))?;
+    lua.load(&source).set_name(&args.cmd).exec()?;
+  } else {
+    lua.load(&args.cmd).exec()?;
+  }
+
   events::run_loop(
     event_loop,
     lua,
