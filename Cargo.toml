@@ -1,6 +1,6 @@
 [package]
 name = "msi-monitor-ctrl"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["Kevin Darlington <kevin@outroot.com>"]
 repository = "https://github.com/kdar/msi-monitor-ctrl"
