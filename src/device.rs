@@ -34,6 +34,8 @@ impl MSIDevice {
       return Err("unable to find device".into());
     };
     let mut device_handle = device.open()?;
+    #[cfg(target_os = "linux")]
+    device_handle.set_auto_detach_kernel_driver(true)?;
     let device_desc = device.device_descriptor()?;
 
     let Some(out_endpoint) = find_endpoint(
@@ -307,7 +309,9 @@ fn configure_endpoint<T: UsbContext>(
   handle: &mut DeviceHandle<T>,
   endpoint: &Endpoint,
 ) -> rusb::Result<()> {
-  handle.set_active_configuration(endpoint.config)?;
+  if handle.active_configuration()? != endpoint.config {
+    handle.set_active_configuration(endpoint.config)?;
+  }
   #[cfg(target_os = "macos")]
   {
     handle.detach_kernel_driver(endpoint.iface)?;
