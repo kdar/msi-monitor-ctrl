@@ -34,8 +34,11 @@ impl MSIDevice {
       return Err("unable to find device".into());
     };
     let mut device_handle = device.open()?;
-    #[cfg(target_os = "linux")]
-    device_handle.set_auto_detach_kernel_driver(true)?;
+    if let Err(e) = device_handle.set_auto_detach_kernel_driver(true) {
+      if e != rusb::Error::NotSupported {
+        return Err(e.into());
+      }
+    }
     let device_desc = device.device_descriptor()?;
 
     let Some(out_endpoint) = find_endpoint(
