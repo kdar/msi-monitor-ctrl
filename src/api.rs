@@ -1,18 +1,14 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
 use enigo::Coordinate;
 use enigo::Direction;
-use enigo::Enigo;
 use enigo::Key;
 use enigo::Keyboard;
 use enigo::Mouse;
-use enigo::Settings;
 use global_hotkey::hotkey::HotKey;
 use mlua::ExternalError;
 use mlua::Function;
@@ -24,7 +20,6 @@ use rfd::MessageLevel;
 
 use crate::device;
 use crate::state::AppState;
-use crate::state::WrappedEnigo;
 
 pub fn register(lua: &Lua, state: AppState) -> Result<(), mlua::Error> {
   let device_open = lua.create_function(
@@ -214,9 +209,6 @@ pub fn register(lua: &Lua, state: AppState) -> Result<(), mlua::Error> {
     },
   )?;
 
-  let _enigo_instance = Arc::new(Mutex::new(WrappedEnigo(
-    Enigo::new(&Settings::default()).map_err(|e| e.into_lua_err())?,
-  )));
   let enigo_clone = state.enigo.clone();
   let screen_size = lua.create_function(move |_, ()| -> Result<(i32, i32), mlua::Error> {
     let enigo_guard = enigo_clone.lock().unwrap();

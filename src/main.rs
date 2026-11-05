@@ -3,15 +3,21 @@
   windows_subsystem = "windows"
 )]
 
+use std::collections::HashMap;
 use std::io::IsTerminal;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use clap::Parser;
 use directories::ProjectDirs;
 use display_info::DisplayInfo;
+use enigo::Enigo;
+use enigo::Settings;
 use errors::StdError;
 use global_hotkey::GlobalHotKeyEvent;
 use global_hotkey::GlobalHotKeyManager;
 use mlua::Lua;
+use nusb::MaybeFuture;
 use rfd::MessageButtons;
 use rfd::MessageDialog;
 use rfd::MessageLevel;
@@ -183,14 +189,6 @@ fn run() -> Result<(), Box<StdError>> {
     }
   });
 
-  use std::collections::HashMap;
-  use std::sync::Arc;
-  use std::sync::Mutex;
-
-    use enigo::Settings;
-use enigo::Enigo;
-use nusb::MaybeFuture;
-  
   use crate::state::WrappedEnigo;
   use crate::state::WrappedHotKeyManager;
 
@@ -203,16 +201,16 @@ use nusb::MaybeFuture;
     devices: Arc::new(Mutex::new(
       nusb::list_devices()
         .wait()
-        .unwrap()
+        .map_err(|e| format!("failed to list USB devices: {e}"))?
         .map(|d| (d.id(), d))
         .collect(),
     )),
     enigo: Arc::new(Mutex::new(WrappedEnigo(
-      Enigo::new(&Settings::default()).unwrap(),
+      Enigo::new(&Settings::default()).map_err(|e| format!("failed to init Enigo: {e}"))?,
     ))),
   };
 
-  api::register(&lua, state.clone()).unwrap();
+  api::register(&lua, state.clone())?;
 
   let cmd_path = std::path::Path::new(&args.cmd);
   if cmd_path.is_file() {

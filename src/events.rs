@@ -15,6 +15,17 @@ use tracing::event;
 
 use crate::find_screen_edge;
 use crate::state::AppState;
+const MODIFIER_RELEASES: &[(device_query::Keycode, rdev::Key)] = &[
+  (device_query::Keycode::LAlt, rdev::Key::Alt),
+  (device_query::Keycode::RAlt, rdev::Key::AltGr),
+  (device_query::Keycode::LControl, rdev::Key::ControlLeft),
+  (device_query::Keycode::RControl, rdev::Key::ControlRight),
+  (device_query::Keycode::LShift, rdev::Key::ShiftLeft),
+  (device_query::Keycode::RShift, rdev::Key::ShiftRight),
+  (device_query::Keycode::LMeta, rdev::Key::MetaLeft),
+  (device_query::Keycode::RMeta, rdev::Key::MetaRight),
+];
+
 
 pub fn run_loop(
   event_loop: EventLoop<()>,
@@ -37,7 +48,7 @@ pub fn run_loop(
     let mut last_displays_refresh: Option<std::time::Instant> = None;
     event_loop.run(move |_, _, control_flow| {
       *control_flow = ControlFlow::Poll;
-      // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+      // *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(10));
 
       if screen_edge_clone.lock().unwrap().is_some()
         && last_edge_check.elapsed() >= Duration::from_millis(50)
@@ -101,29 +112,12 @@ pub fn run_loop(
           // When we connect again, make sure all our modifier keys are not pressed down.
           let device_state = device_query::DeviceState::new();
           let keys = device_state.get_keys();
-          if keys.contains(&device_query::Keycode::LAlt) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::Alt)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::RAlt) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::AltGr)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::LControl) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlLeft)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::RControl) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ControlRight)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::LShift) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftLeft)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::RShift) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::ShiftRight)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::LMeta) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaLeft)).unwrap();
-          }
-          if keys.contains(&device_query::Keycode::RMeta) {
-            rdev::simulate(&rdev::EventType::KeyRelease(rdev::Key::MetaRight)).unwrap();
+          for (dq_key, rdev_key) in MODIFIER_RELEASES {
+            if keys.contains(dq_key) {
+              if let Err(e) = rdev::simulate(&rdev::EventType::KeyRelease(*rdev_key)) {
+                event!(Level::ERROR, "simulate key release {:?}: {}", rdev_key, e);
+              }
+            }
           }
         }
 

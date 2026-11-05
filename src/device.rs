@@ -202,6 +202,9 @@ impl MSIDevice {
   // }
 
   pub(crate) fn set_input(&mut self, position: u8) -> Result<(), Box<StdError>> {
+    if position > 9 {
+      return Err(format!("position must be 0–9, got {position}").into());
+    }
     let timeout = Duration::from_secs(1);
 
     let buf = make_packet(&[
@@ -238,6 +241,9 @@ impl MSIDevice {
   }
 
   pub(crate) fn set_kvm(&mut self, position: u8) -> Result<(), Box<StdError>> {
+    if position > 9 {
+      return Err(format!("position must be 0–9, got {position}").into());
+    }
     let timeout = Duration::from_secs(1);
 
     let buf = make_packet(&[
