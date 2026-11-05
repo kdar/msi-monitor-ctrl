@@ -1,5 +1,4 @@
 /target
-/.doc
 /kdar.lua
 mise.local.toml
-/.vscode
+/.*
